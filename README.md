@@ -58,9 +58,15 @@ Copy the `.claude/skills/` directory to your project or home directory:
 # Skills will be available when running Claude Code in this project
 cp -r .claude/skills/ /path/to/your/project/.claude/skills/
 
-# Option 2: User-level installation
+# Option 2a: User-level installation
 # Skills will be available in all Claude Code sessions
 cp -r .claude/skills/ ~/.claude/skills/
+
+# Option 2b: User-level installation from github
+TMP_DIR=$(mktemp -d) \
+  && git clone --depth 1 git@github.com:indrek8/claude-skills.git "$TMP_DIR" \
+  && cp -R "$TMP_DIR/.claude" . \
+  && rm -rf "$TMP_DIR"
 ```
 
 ### Skill Structure
