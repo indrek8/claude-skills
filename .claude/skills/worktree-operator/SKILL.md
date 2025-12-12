@@ -24,8 +24,10 @@ This skill activates when the user's request matches these patterns:
 | "operator plan" | create-plan.md | Analyze codebase, create plan.md |
 | "operator analyze" | create-plan.md | Same as above |
 | "operator create task {name}" | create-task.md | Create task folder + worktree |
-| "operator spawn {name}" | spawn-subagent.md | Launch sub-agent on task |
+| "operator spawn {name}" | spawn-subagent.md | Launch sub-agent on task (inline, consumes tokens) |
 | "operator run subagent {name}" | spawn-subagent.md | Same as above |
+| "operator fork {name}" | spawn-subagent.md | Launch sub-agent in forked terminal (no token cost) |
+| "operator spawn fork {name}" | spawn-subagent.md | Same as above |
 | "operator review {name}" | review-task.md | Review sub-agent output |
 | "operator accept {name}" | accept-task.md | Rebase, merge, cleanup |
 | "operator iterate {name}" | reject-iterate.md | Write feedback, re-spawn |
@@ -77,6 +79,10 @@ HEADLESS_FLAG: "--dangerously-skip-permissions"
 ## Tools
 
 Python tools available in `tools/`:
+
+### fork_terminal.py
+- `fork_terminal(command, working_dir)` - Open new terminal and run command
+- `spawn_forked_subagent(task_name, ticket, workspace_path, model, iteration)` - Spawn sub-agent in forked terminal
 
 ### workspace.py
 - `init_workspace(repo_url, branch, workspace_path)` - Initialize workspace
@@ -208,7 +214,7 @@ myworkspace/                     # Operator root (NOT a git repo)
 
 ## Sub-Agent Spawn Command
 
-### Headless Mode
+### Headless Inline Mode (consumes session tokens)
 ```bash
 claude --dangerously-skip-permissions -p "You are a sub-agent working on task '{task_name}'.
 
@@ -224,6 +230,24 @@ Instructions:
 6. Exit when done
 
 IMPORTANT: Only modify files in your worktree. Do not touch other folders."
+```
+
+### Headless Forked Mode (runs in new terminal, no token cost)
+```python
+from tools.fork_terminal import spawn_forked_subagent
+
+result = spawn_forked_subagent(
+    task_name="{task_name}",
+    ticket="{ticket}",
+    workspace_path=".",
+    model="opus",  # or "sonnet", "haiku"
+    iteration=1
+)
+```
+
+Or via command line:
+```bash
+python tools/fork_terminal.py --spawn {task_name} {ticket} . opus
 ```
 
 ### Interactive Mode

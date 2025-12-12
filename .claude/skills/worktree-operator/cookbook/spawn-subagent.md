@@ -15,11 +15,18 @@ Launch a sub-agent to work on a task in its dedicated worktree.
 
 ## Execution Modes
 
-### Headless Mode
-- Sub-agent runs autonomously
+### Headless Mode (Inline)
+- Sub-agent runs autonomously **in current session**
+- Consumes tokens in operator's context
 - No interactive questions
 - Reads spec.md → works → writes results.md → exits
-- Best for: well-defined tasks with clear specs
+- Best for: small tasks, quick fixes
+
+### Headless Mode (Forked Terminal)
+- Sub-agent runs autonomously **in new terminal window**
+- Does NOT consume tokens in operator's session
+- Operator can continue working or monitor progress
+- Best for: larger tasks, parallel work, token-heavy implementations
 
 ### Interactive Mode
 - Sub-agent can ask clarifying questions
@@ -56,11 +63,17 @@ Ask user or infer from context:
 Task '{task_name}' is ready to spawn.
 
 Execution mode:
-1. Headless (recommended for clear specs)
-2. Interactive (for complex tasks)
+1. Headless Inline (small tasks, consumes session tokens)
+2. Headless Forked (larger tasks, runs in new terminal)
+3. Interactive (for complex tasks needing clarification)
 
-Which mode? [1/2]:
+Which mode? [1/2/3]:
 ```
+
+**Default recommendations:**
+- Small fixes, quick changes → Inline (1)
+- Feature implementation, refactoring, tests → Forked (2)
+- Unclear specs, needs discussion → Interactive (3)
 
 ### 3. Build Sub-Agent Prompt
 
@@ -119,21 +132,51 @@ BEGIN WORK NOW.'''
 
 ### 4. Execute Spawn
 
-#### Headless Mode
+#### Headless Inline Mode
+
+Runs in current session (consumes tokens):
 
 ```bash
-# Using Claude CLI
+# Using Claude CLI in current session
 claude --dangerously-skip-permissions -p "{prompt}"
+```
 
-# Or using the claude command with working directory
-cd {worktree_path}
-claude --dangerously-skip-permissions -p "{prompt}"
+#### Headless Forked Mode (Recommended for larger tasks)
+
+Runs in new terminal window (does NOT consume session tokens):
+
+```python
+from tools.fork_terminal import spawn_forked_subagent
+
+result = spawn_forked_subagent(
+    task_name="fix-logging",
+    ticket="K-123",
+    workspace_path=".",
+    model="opus",  # or "sonnet", "haiku"
+    iteration=1
+)
+
+if result["success"]:
+    print(f"✓ Sub-agent forked in new terminal")
+    print(f"  Worktree: {result['worktree']}")
+else:
+    print(f"✗ Fork failed: {result['error']}")
+```
+
+Or via command line:
+
+```bash
+# macOS - opens new Terminal window
+python tools/fork_terminal.py --spawn {task_name} {ticket} {workspace} {model}
+
+# Example
+python tools/fork_terminal.py --spawn fix-logging K-123 . opus
 ```
 
 #### Interactive Mode
 
 ```bash
-# Open new terminal and run claude
+# Open new terminal and run claude interactively
 # On macOS:
 osascript -e 'tell app "Terminal" to do script "cd {worktree_path} && claude --dangerously-skip-permissions"'
 
@@ -148,7 +191,7 @@ Update plan.md task status:
 - Status: IN_PROGRESS
 - Branch: feature/{ticket}/{task_name}
 - Spawned: {timestamp}
-- Mode: {headless|interactive}
+- Mode: {inline|forked|interactive}
 ```
 
 ### 6. Report Spawn
@@ -156,13 +199,19 @@ Update plan.md task status:
 ```
 ✓ Sub-agent spawned for '{task_name}'
 
-Mode: {headless|interactive}
+Mode: {inline|forked|interactive}
 Worktree: {worktree_path}
 Branch: {branch}
 
-{if headless}
-Sub-agent is running autonomously.
-Run "operator review {task_name}" when complete to review output.
+{if inline}
+Sub-agent is running in this session.
+Wait for completion, then review output.
+{/if}
+
+{if forked}
+Sub-agent is running in a NEW TERMINAL WINDOW.
+You can continue working here or switch to monitor.
+Run "operator review {task_name}" when complete.
 {/if}
 
 {if interactive}
