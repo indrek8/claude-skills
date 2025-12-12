@@ -39,6 +39,7 @@ This skill activates when the user's request matches these patterns:
 | "operator status {name}" | (inline) | Check sub-agent health for specific task |
 | "operator health {name}" | (inline) | Same as above |
 | "operator health" | (inline) | Check health of all running sub-agents |
+| "operator unblocked" | (inline) | Show tasks ready to spawn (dependencies met) |
 
 ## Variables
 
@@ -128,6 +129,12 @@ Python tools available in `tools/`:
 - `check_lock_status(workspace_path)` - Check current lock status
 - `force_unlock(workspace_path)` - Force remove a stale lock (use with caution)
 
+### plan_parser.py
+- `parse_plan(workspace_path)` - Parse plan.md and extract task info, dependencies, and status
+- `get_unblocked_tasks(workspace_path)` - Return tasks ready to spawn (all dependencies met)
+- `check_dependencies(task_name, workspace_path)` - Check if task dependencies are met
+- `format_unblocked_report(workspace_path)` - Format human-readable dependency status report
+
 ## File Structure
 
 The operator maintains this workspace structure:
@@ -193,12 +200,15 @@ myworkspace/                     # Operator root (NOT a git repo)
 
 ### On Spawn Sub-Agent
 
-1. Determine headless vs interactive mode
-2. Build sub-agent prompt with:
+1. **Check dependencies** (from plan.md)
+   - If dependencies not met, spawn is blocked
+   - Use `--force` flag to override dependency check
+2. Determine headless vs interactive mode
+3. Build sub-agent prompt with:
    - Task folder path
    - Instructions to read spec.md
    - Instructions to write results.md
-3. Execute spawn command
+4. Execute spawn command
 
 ### On Review
 
@@ -268,13 +278,17 @@ result = spawn_forked_subagent(
     ticket="{ticket}",
     workspace_path=".",
     model="opus",  # or "sonnet", "haiku"
-    iteration=1
+    iteration=1,
+    force=False  # Set to True to skip dependency checking
 )
 ```
 
 Or via command line:
 ```bash
 python tools/fork_terminal.py --spawn {task_name} {ticket} . opus
+
+# To skip dependency checking:
+python tools/fork_terminal.py --spawn {task_name} {ticket} . opus --force
 ```
 
 ### Interactive Mode
@@ -286,3 +300,34 @@ Spawn in new terminal without -p flag, then provide instructions.
 - **Worktree exists**: Suggest reset or different task name
 - **Branch exists**: Suggest force create or different name
 - **Tests fail**: Include in review, decide whether to accept anyway
+- **Dependencies not met**: Spawn blocked, show missing dependencies, suggest `--force` or complete dependencies first
+
+## Dependency Enforcement
+
+Tasks in plan.md can specify dependencies:
+
+```markdown
+### 3. implement-auth
+- Status: PENDING
+- Dependencies: setup-database, create-user-model
+```
+
+**Behavior:**
+- `create_task()` - Warns if dependencies not met (does not block)
+- `spawn_subagent()` - Blocks if dependencies not met
+- Use `--force` flag to override dependency check
+- `operator unblocked` - Shows tasks ready to spawn
+
+**To check dependencies:**
+```python
+from tools.plan_parser import check_dependencies, get_unblocked_tasks
+
+# Check specific task
+result = check_dependencies("implement-auth", workspace_path)
+if not result["can_spawn"]:
+    print(f"Missing: {result['missing']}")
+
+# Get all spawnable tasks
+unblocked = get_unblocked_tasks(workspace_path)
+print(f"Ready to spawn: {unblocked['unblocked']}")
+```
