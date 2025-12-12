@@ -23,6 +23,17 @@ from locking import workspace_lock, LockError
 # Import logging utilities
 from logging_config import get_logger
 
+# Import conflict resolution utilities
+from conflict_resolver import (
+    detect_conflicts,
+    resolve_all,
+    resolve_file,
+    abort_rebase,
+    continue_rebase,
+    format_conflict_report,
+    is_rebase_in_progress,
+)
+
 # Module logger
 logger = get_logger("git_ops")
 
@@ -120,7 +131,7 @@ def rebase_branch(
         abort_on_conflict: If True, abort rebase on conflict
 
     Returns:
-        dict with rebase results
+        dict with rebase results, including detailed conflict info if conflicts occur
     """
     # Fetch first
     run_command(["git", "fetch", "origin"], cwd=worktree_path)
@@ -149,11 +160,25 @@ def rebase_branch(
             }
 
         logger.error(f"rebase_branch: Rebase failed: {stderr}")
+        if has_conflicts:
+            # Get detailed conflict information
+            conflict_info = detect_conflicts(worktree_path)
+            conflict_report = format_conflict_report(conflict_info)
+
+            return {
+                "success": False,
+                "error": f"Rebase failed: {stderr}",
+                "conflicts": True,
+                "conflict_info": conflict_info,
+                "conflict_report": conflict_report,
+                "hint": "Use 'operator resolve {task}' to resolve conflicts"
+            }
+
         return {
             "success": False,
             "error": f"Rebase failed: {stderr}",
-            "conflicts": has_conflicts,
-            "hint": "Resolve conflicts, then run: git rebase --continue"
+            "conflicts": False,
+            "hint": "Check git status for more information"
         }
 
     logger.info(f"rebase_branch: Successfully rebased {current} onto {target_branch}")
