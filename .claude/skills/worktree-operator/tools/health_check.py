@@ -13,6 +13,12 @@ from typing import Optional
 
 from validation import ValidationError, validate_task_name, validate_path
 
+# Import logging utilities
+from logging_config import get_logger
+
+# Module logger
+logger = get_logger("health_check")
+
 
 # Status constants
 STATUS_STARTING = "starting"
@@ -168,12 +174,14 @@ def write_status(
         with open(status_file, 'w') as f:
             json.dump(subagent_status.to_dict(), f, indent=2)
 
+        logger.debug(f"write_status: Updated status for task '{task_name}': {status} - {progress}")
         return {
             "success": True,
             "status_file": str(status_file),
             "status": subagent_status.to_dict()
         }
     except Exception as e:
+        logger.error(f"write_status: Failed to write status file for task '{task_name}': {e}")
         return {
             "success": False,
             "error": f"Failed to write status file: {e}"

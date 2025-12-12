@@ -20,6 +20,12 @@ from validation import (
 # Import health check utilities
 from health_check import mark_started, mark_running
 
+# Import logging utilities
+from logging_config import get_logger
+
+# Module logger
+logger = get_logger("fork_terminal")
+
 
 def escape_for_applescript(s: str) -> str:
     """
@@ -289,6 +295,8 @@ BEGIN WORK NOW.'''
 
     claude_command = f"claude --dangerously-skip-permissions {model_flag}-p {quoted_prompt}"
 
+    logger.info(f"spawn_forked_subagent: Spawning sub-agent for task '{task_name}', ticket {ticket}, model {model}, iteration {iteration}")
+
     # Mark sub-agent as starting
     mark_started(task_name, str(workspace))
 
@@ -298,6 +306,7 @@ BEGIN WORK NOW.'''
     if result["success"]:
         # Update status to running
         mark_running(task_name, "Sub-agent starting in new terminal", str(workspace))
+        logger.info(f"spawn_forked_subagent: Sub-agent forked successfully for task '{task_name}'")
 
         result["task_name"] = task_name
         result["ticket"] = ticket
@@ -306,6 +315,8 @@ BEGIN WORK NOW.'''
         result["worktree"] = str(worktree_path)
         result["message"] = f"Sub-agent forked for task '{task_name}' in new terminal"
         result["health_check"] = "Status file created. Use 'operator status {task_name}' to check progress."
+    else:
+        logger.error(f"spawn_forked_subagent: Failed to fork terminal for task '{task_name}': {result.get('error')}")
 
     return result
 

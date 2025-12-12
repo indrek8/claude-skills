@@ -14,6 +14,17 @@ from typing import Optional, Tuple, List
 
 from validation import ValidationError, validate_path
 
+# Import logging utilities - use lazy import to avoid circular dependencies
+_logger = None
+
+def _get_logger():
+    """Get logger lazily to avoid circular imports."""
+    global _logger
+    if _logger is None:
+        from logging_config import get_logger
+        _logger = get_logger("test_runner")
+    return _logger
+
 
 # Default test timeout (5 minutes)
 DEFAULT_TEST_TIMEOUT = 300
@@ -266,6 +277,7 @@ def run_tests(
         timeout = config["test_timeout"]
 
     # Run the tests
+    _get_logger().info(f"run_tests: Running tests in {repo} with command: {cmd}")
     result = {
         "success": False,
         "command": cmd,
@@ -283,14 +295,17 @@ def run_tests(
     if returncode == 0:
         result["success"] = True
         result["message"] = f"Tests passed in {result['duration']}s"
+        _get_logger().info(f"run_tests: Tests passed in {result['duration']}s")
     elif returncode == -1:
         result["success"] = False
         result["error"] = "Test execution failed or timed out"
         result["message"] = stderr
+        _get_logger().error(f"run_tests: Test execution failed or timed out")
     else:
         result["success"] = False
         result["error"] = f"Tests failed with exit code {returncode}"
         result["message"] = f"Tests failed. Check stdout/stderr for details."
+        _get_logger().warning(f"run_tests: Tests failed with exit code {returncode}")
 
     return result
 

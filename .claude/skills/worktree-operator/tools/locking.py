@@ -15,6 +15,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Generator
 
+# Import logging utilities - use lazy import to avoid circular dependencies
+_logger = None
+
+def _get_logger():
+    """Get logger lazily to avoid circular imports."""
+    global _logger
+    if _logger is None:
+        from logging_config import get_logger
+        _logger = get_logger("locking")
+    return _logger
+
 # Default lock timeout (1 hour for stale lock detection)
 DEFAULT_LOCK_TIMEOUT = 3600  # seconds
 
@@ -204,6 +215,7 @@ class WorkspaceLock:
                 # Lock acquired
                 self._acquired = True
                 self._write_lock_info()
+                _get_logger().debug(f"acquire: Lock acquired for operation '{self.operation}' on {self.workspace_path}")
                 return True
 
             except (OSError, IOError) as e:
@@ -217,6 +229,7 @@ class WorkspaceLock:
 
                 if not blocking:
                     lock_info = self._read_lock_info()
+                    _get_logger().warning(f"acquire: Lock held by another operation: {lock_info}")
                     raise LockError(
                         "Workspace is locked by another operation",
                         lock_info=lock_info,
@@ -227,6 +240,7 @@ class WorkspaceLock:
                 elapsed = time.time() - start_time
                 if elapsed >= timeout:
                     lock_info = self._read_lock_info()
+                    _get_logger().error(f"acquire: Timeout waiting for lock after {timeout}s, held by: {lock_info}")
                     raise LockError(
                         f"Timeout waiting for workspace lock after {timeout}s",
                         lock_info=lock_info,
@@ -257,6 +271,7 @@ class WorkspaceLock:
 
         self._remove_lock_info()
         self._acquired = False
+        _get_logger().debug(f"release: Lock released for operation '{self.operation}' on {self.workspace_path}")
 
     def __enter__(self):
         """Context manager entry."""
