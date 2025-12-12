@@ -21,6 +21,9 @@ from validation import (
     validate_path,
 )
 
+# Import test runner
+from test_runner import run_tests, verify_tests_pass
+
 
 def run_command(cmd: list[str], cwd: Optional[str] = None) -> Tuple[int, str, str]:
     """Run a shell command and return (returncode, stdout, stderr)."""
@@ -365,12 +368,24 @@ def accept_task(
 
     # Step 1: Rebase sub-branch onto main
     results["steps"].append("Rebasing sub-branch...")
-    sync_result = sync_task(task_name, main_branch, workspace_path)
+    sync_result = sync_task(task_name, main_branch, str(workspace))
     if not sync_result["success"]:
         results["success"] = False
         results["errors"].append(f"Rebase failed: {sync_result.get('error')}")
         return results
     results["steps"].append("✓ Rebase complete")
+
+    # Step 1.5: Verify tests pass after rebase
+    results["steps"].append("Running tests after rebase...")
+    test_result = verify_tests_pass(str(worktree_path), workspace_path=str(workspace))
+    if not test_result["passed"]:
+        results["success"] = False
+        results["errors"].append(f"Tests failed after rebase: {test_result.get('error', 'Unknown error')}")
+        results["test_output"] = test_result
+        results["hint"] = "Fix test failures in the worktree before accepting"
+        return results
+    results["steps"].append(f"✓ Tests passed ({test_result.get('duration', '?')}s)")
+    results["test_after_rebase"] = test_result
 
     # Step 2: Switch to main branch in repo
     results["steps"].append("Switching to main branch...")
@@ -412,6 +427,30 @@ def accept_task(
         return results
     results["steps"].append("✓ Merge complete")
     results["merge_commit"] = merge_msg
+
+    # Step 3.5: Verify tests pass after merge
+    results["steps"].append("Running tests after merge...")
+    test_result = verify_tests_pass(str(repo_path), workspace_path=str(workspace))
+    if not test_result["passed"]:
+        # Tests failed after merge - revert the merge!
+        results["steps"].append("✗ Tests failed after merge, reverting...")
+        revert_returncode, _, revert_stderr = run_command(
+            ["git", "reset", "--hard", "HEAD~1"],
+            cwd=str(repo_path)
+        )
+        if revert_returncode == 0:
+            results["steps"].append("✓ Merge reverted")
+            results["reverted"] = True
+        else:
+            results["errors"].append(f"Failed to revert merge: {revert_stderr}")
+
+        results["success"] = False
+        results["errors"].append(f"Tests failed after merge: {test_result.get('error', 'Unknown error')}")
+        results["test_output"] = test_result
+        results["hint"] = "The merge was reverted. Fix test failures and try again."
+        return results
+    results["steps"].append(f"✓ Tests passed after merge ({test_result.get('duration', '?')}s)")
+    results["test_after_merge"] = test_result
 
     # Step 4: Push (optional)
     if push:

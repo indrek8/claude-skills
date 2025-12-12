@@ -96,6 +96,12 @@ Python tools available in `tools/`:
 - `read_status(task_name, workspace_path)` - Get full status of sub-agent
 - `list_all_status(workspace_path)` - List status of all tasks
 
+### test_runner.py
+- `detect_test_command(repo_path)` - Auto-detect test framework (npm, pytest, go, cargo, etc.)
+- `run_tests(repo_path, test_command, timeout)` - Run tests with full output
+- `verify_tests_pass(repo_path, test_command, timeout)` - Simple pass/fail check
+- `run_tests_with_retry(repo_path, test_command, timeout, max_retries)` - Run with retry for flaky tests
+
 ### workspace.py
 - `init_workspace(repo_url, branch, workspace_path)` - Initialize workspace
 - `workspace_status(workspace_path)` - Get workspace status
