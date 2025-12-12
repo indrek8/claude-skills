@@ -17,6 +17,9 @@ from validation import (
     validate_path,
 )
 
+# Import locking utilities
+from locking import workspace_lock, LockError
+
 
 def run_command(cmd: list[str], cwd: Optional[str] = None) -> Tuple[int, str, str]:
     """Run a shell command and return (returncode, stdout, stderr)."""
@@ -272,6 +275,9 @@ def sync_all_worktrees(
     """
     Rebase all active worktrees onto the main branch.
 
+    This operation acquires a workspace lock to prevent race conditions
+    with other operations (create, accept, etc.).
+
     Args:
         workspace_path: Path to workspace
         main_branch: Branch to rebase onto
@@ -280,6 +286,19 @@ def sync_all_worktrees(
         dict with sync results for each worktree
     """
     workspace = Path(workspace_path).resolve()
+
+    # Acquire workspace lock for the entire sync operation
+    try:
+        with workspace_lock(str(workspace), "sync_all_worktrees"):
+            return _sync_all_worktrees_locked(workspace, main_branch)
+    except LockError as e:
+        return e.to_dict()
+
+
+def _sync_all_worktrees_locked(workspace: Path, main_branch: str) -> dict:
+    """
+    Internal implementation of sync_all_worktrees, called with lock held.
+    """
     results = {
         "success": True,
         "synced": [],

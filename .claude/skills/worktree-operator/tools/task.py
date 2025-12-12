@@ -25,6 +25,9 @@ from validation import (
 # Import test runner
 from test_runner import run_tests, verify_tests_pass
 
+# Import locking utilities
+from locking import workspace_lock, LockError
+
 
 def run_command(cmd: list[str], cwd: Optional[str] = None) -> Tuple[int, str, str]:
     """Run a shell command and return (returncode, stdout, stderr)."""
@@ -202,6 +205,9 @@ def create_task(
     """
     Create a new task with folder structure and git worktree.
 
+    This operation acquires a workspace lock to prevent race conditions
+    when creating multiple tasks concurrently.
+
     Args:
         ticket: Ticket ID (e.g., "K-123")
         task_name: Task name (e.g., "fix-logging")
@@ -238,26 +244,29 @@ def create_task(
             "hint": "Run workspace init first"
         }
 
-    # Check if task already exists
-    if task_dir.exists():
-        return {
-            "success": False,
-            "error": f"Task folder already exists: {task_dir}",
-            "hint": "Use a different task name or remove existing folder"
-        }
+    # Acquire workspace lock to prevent race conditions
+    try:
+        with workspace_lock(str(workspace), f"create_task:{task_name}"):
+            # Check if task already exists (inside lock to prevent race)
+            if task_dir.exists():
+                return {
+                    "success": False,
+                    "error": f"Task folder already exists: {task_dir}",
+                    "hint": "Use a different task name or remove existing folder"
+                }
 
-    # Create task folder structure
-    task_dir.mkdir(parents=True)
+            # Create task folder structure
+            task_dir.mkdir(parents=True)
 
-    # Create task files
-    today = datetime.now().strftime("%Y-%m-%d")
+            # Create task files
+            today = datetime.now().strftime("%Y-%m-%d")
 
-    # spec.md
-    spec_path = task_dir / "spec.md"
-    if spec_content:
-        spec_path.write_text(spec_content)
-    else:
-        spec_template = f"""# Task: {task_name}
+            # spec.md
+            spec_path = task_dir / "spec.md"
+            if spec_content:
+                spec_path.write_text(spec_content)
+            else:
+                spec_template = f"""# Task: {task_name}
 
 ## Ticket: {ticket}
 ## Branch: {sub_branch}
@@ -296,41 +305,44 @@ _Describe the objective here_
 
 - _Helpful hints_
 """
-        spec_path.write_text(spec_template)
+                spec_path.write_text(spec_template)
 
-    # feedback.md (empty initially)
-    feedback_path = task_dir / "feedback.md"
-    feedback_path.write_text(f"# Feedback: {task_name}\n\n_No feedback yet_\n")
+            # feedback.md (empty initially)
+            feedback_path = task_dir / "feedback.md"
+            feedback_path.write_text(f"# Feedback: {task_name}\n\n_No feedback yet_\n")
 
-    # results.md (empty initially)
-    results_path = task_dir / "results.md"
-    results_path.write_text(f"# Results: {task_name}\n\n_Results will be written by sub-agent_\n")
+            # results.md (empty initially)
+            results_path = task_dir / "results.md"
+            results_path.write_text(f"# Results: {task_name}\n\n_Results will be written by sub-agent_\n")
 
-    # Create git worktree with sub-branch
-    returncode, stdout, stderr = run_command(
-        ["git", "worktree", "add", str(worktree_path), "-b", sub_branch, main_branch],
-        cwd=str(repo_path)
-    )
+            # Create git worktree with sub-branch
+            returncode, stdout, stderr = run_command(
+                ["git", "worktree", "add", str(worktree_path), "-b", sub_branch, main_branch],
+                cwd=str(repo_path)
+            )
 
-    if returncode != 0:
-        # Clean up on failure
-        import shutil
-        shutil.rmtree(task_dir)
-        return {
-            "success": False,
-            "error": f"Failed to create worktree: {stderr}",
-            "command": f"git worktree add {worktree_path} -b {sub_branch} {main_branch}"
-        }
+            if returncode != 0:
+                # Clean up on failure
+                import shutil
+                shutil.rmtree(task_dir)
+                return {
+                    "success": False,
+                    "error": f"Failed to create worktree: {stderr}",
+                    "command": f"git worktree add {worktree_path} -b {sub_branch} {main_branch}"
+                }
 
-    return {
-        "success": True,
-        "task_dir": str(task_dir),
-        "worktree_path": str(worktree_path),
-        "branch": sub_branch,
-        "based_on": main_branch,
-        "files_created": ["spec.md", "feedback.md", "results.md"],
-        "message": f"Task '{task_name}' created successfully"
-    }
+            return {
+                "success": True,
+                "task_dir": str(task_dir),
+                "worktree_path": str(worktree_path),
+                "branch": sub_branch,
+                "based_on": main_branch,
+                "files_created": ["spec.md", "feedback.md", "results.md"],
+                "message": f"Task '{task_name}' created successfully"
+            }
+
+    except LockError as e:
+        return e.to_dict()
 
 
 def sync_task(
@@ -484,6 +496,9 @@ def accept_task(
     This function is fully transactional - on any failure, all changes
     are rolled back to restore the workspace to its original state.
 
+    This operation acquires a workspace lock to prevent race conditions
+    with other operations (create, sync, etc.).
+
     Args:
         ticket: Ticket ID
         task_name: Task name
@@ -513,18 +528,44 @@ def accept_task(
     worktree_path = task_dir / "worktree"
     sub_branch = f"feature/{ticket}/{task_name}"
 
+    if not worktree_path.exists():
+        return {
+            "success": False,
+            "error": f"Worktree not found at {worktree_path}"
+        }
+
+    # Acquire workspace lock for the entire accept operation
+    try:
+        with workspace_lock(str(workspace), f"accept_task:{task_name}"):
+            return _accept_task_locked(
+                ticket, task_name, main_branch, workspace, repo_path,
+                task_dir, worktree_path, sub_branch, push, delete_remote_branch
+            )
+    except LockError as e:
+        return e.to_dict()
+
+
+def _accept_task_locked(
+    ticket: str,
+    task_name: str,
+    main_branch: str,
+    workspace: Path,
+    repo_path: Path,
+    task_dir: Path,
+    worktree_path: Path,
+    sub_branch: str,
+    push: bool,
+    delete_remote_branch: bool
+) -> dict:
+    """
+    Internal implementation of accept_task, called with lock held.
+    """
     results = {
         "success": True,
         "steps": [],
         "errors": [],
         "transactional": True
     }
-
-    if not worktree_path.exists():
-        return {
-            "success": False,
-            "error": f"Worktree not found at {worktree_path}"
-        }
 
     # Initialize transaction
     txn = AcceptTransaction(

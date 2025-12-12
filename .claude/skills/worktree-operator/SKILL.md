@@ -119,9 +119,14 @@ Python tools available in `tools/`:
 - `rebase_branch(worktree_path, target_branch)` - Rebase operation
 - `merge_branch(repo_path, source, target, message)` - Merge branches
 - `delete_branch(repo_path, branch, force, delete_remote)` - Delete branch
-- `sync_all_worktrees(workspace_path, main_branch)` - Sync all worktrees
+- `sync_all_worktrees(workspace_path, main_branch)` - Sync all worktrees (locked)
 - `get_diff_stats(repo_path, base, head)` - Get diff statistics
 - `get_commits_between(repo_path, base, head)` - Get commit list
+
+### locking.py
+- `workspace_lock(workspace_path, operation)` - Context manager for workspace lock
+- `check_lock_status(workspace_path)` - Check current lock status
+- `force_unlock(workspace_path)` - Force remove a stale lock (use with caution)
 
 ## File Structure
 
@@ -131,11 +136,15 @@ The operator maintains this workspace structure:
 myworkspace/                     # Operator root (NOT a git repo)
 ├── plan.md                      # Task board
 ├── review-notes.md              # Decision log
+├── workspace.json               # Configuration (optional)
+├── .workspace.lock              # Lock file (when operation in progress)
+├── .workspace.lock.info         # Lock holder info (for debugging)
 ├── repo/                        # Main clone
 └── task-{name}/                 # Task folders
     ├── spec.md                  # Task specification
     ├── feedback.md              # Iteration feedback
     ├── results.md               # Sub-agent output
+    ├── .subagent-status.json    # Sub-agent health status
     └── worktree/                # Git worktree
 ```
 
