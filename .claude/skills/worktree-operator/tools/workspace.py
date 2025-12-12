@@ -20,6 +20,12 @@ from validation import (
     validate_url,
 )
 
+# Import logging utilities
+from logging_config import get_logger, log_operation_start, log_operation_success, log_operation_failure
+
+# Module logger
+logger = get_logger("workspace")
+
 
 def run_command(cmd: list[str], cwd: Optional[str] = None) -> Tuple[int, str, str]:
     """Run a shell command and return (returncode, stdout, stderr)."""
@@ -84,13 +90,14 @@ def init_workspace(
     workspace.mkdir(parents=True, exist_ok=True)
 
     # Clone repository
-    print(f"Cloning {repo_url} into {repo_path}...")
+    logger.info(f"init_workspace: Cloning {repo_url} into {repo_path}")
     returncode, stdout, stderr = run_command(
         ["git", "clone", repo_url, repo_folder],
         cwd=str(workspace)
     )
 
     if returncode != 0:
+        logger.error(f"init_workspace: Failed to clone repository: {stderr}")
         return {
             "success": False,
             "error": f"Failed to clone repository: {stderr}",
@@ -98,7 +105,7 @@ def init_workspace(
         }
 
     # Checkout the specified branch
-    print(f"Checking out branch: {branch}...")
+    logger.info(f"init_workspace: Checking out branch {branch}")
     returncode, stdout, stderr = run_command(
         ["git", "switch", branch],
         cwd=str(repo_path)
@@ -106,13 +113,14 @@ def init_workspace(
 
     # If branch doesn't exist, try to create it
     if returncode != 0:
-        print(f"Branch {branch} not found, creating...")
+        logger.info(f"init_workspace: Branch {branch} not found, creating")
         returncode, stdout, stderr = run_command(
             ["git", "switch", "-c", branch],
             cwd=str(repo_path)
         )
 
         if returncode != 0:
+            logger.error(f"init_workspace: Failed to checkout/create branch: {stderr}")
             return {
                 "success": False,
                 "error": f"Failed to checkout/create branch: {stderr}",
@@ -157,7 +165,7 @@ _Tasks will be added here_
 - Last Updated: {today}
 """
         plan_path.write_text(plan_content)
-        print(f"Created: {plan_path}")
+        logger.debug(f"init_workspace: Created {plan_path}")
 
     # Create review-notes.md
     if not review_notes_path.exists():
@@ -176,8 +184,9 @@ _Review entries will be added here_
 ## Created: {today}
 """
         review_notes_path.write_text(review_notes_content)
-        print(f"Created: {review_notes_path}")
+        logger.debug(f"init_workspace: Created {review_notes_path}")
 
+    logger.info(f"init_workspace: Workspace initialized successfully at {workspace}")
     return {
         "success": True,
         "workspace": str(workspace),
@@ -325,9 +334,12 @@ def cleanup_workspace(workspace_path: str = ".", remove_repo: bool = False) -> d
     }
 
     if not repo_path.exists():
+        logger.warning(f"cleanup_workspace: Repository not found at {repo_path}")
         results["error"] = "Repository not found"
         results["success"] = False
         return results
+
+    logger.info(f"cleanup_workspace: Starting cleanup of {workspace}")
 
     # Find and remove all task worktrees
     for item in workspace.iterdir():
@@ -342,6 +354,7 @@ def cleanup_workspace(workspace_path: str = ".", remove_repo: bool = False) -> d
                 branch_name = stdout.strip() if returncode == 0 else None
 
                 # Remove worktree
+                logger.debug(f"cleanup_workspace: Removing worktree {worktree_path}")
                 returncode, stdout, stderr = run_command(
                     ["git", "worktree", "remove", str(worktree_path), "--force"],
                     cwd=str(repo_path)
@@ -349,6 +362,7 @@ def cleanup_workspace(workspace_path: str = ".", remove_repo: bool = False) -> d
 
                 if returncode == 0:
                     results["worktrees_removed"].append(str(worktree_path))
+                    logger.info(f"cleanup_workspace: Removed worktree {worktree_path}")
 
                     # Delete the branch
                     if branch_name:
@@ -358,7 +372,9 @@ def cleanup_workspace(workspace_path: str = ".", remove_repo: bool = False) -> d
                         )
                         if returncode == 0:
                             results["branches_deleted"].append(branch_name)
+                            logger.info(f"cleanup_workspace: Deleted branch {branch_name}")
                 else:
+                    logger.error(f"cleanup_workspace: Failed to remove {worktree_path}: {stderr}")
                     results["errors"].append(f"Failed to remove {worktree_path}: {stderr}")
 
     # Optionally remove the repo
@@ -367,12 +383,17 @@ def cleanup_workspace(workspace_path: str = ".", remove_repo: bool = False) -> d
         try:
             shutil.rmtree(repo_path)
             results["repo_removed"] = True
+            logger.info(f"cleanup_workspace: Removed repository at {repo_path}")
         except Exception as e:
+            logger.error(f"cleanup_workspace: Failed to remove repo: {e}")
             results["errors"].append(f"Failed to remove repo: {e}")
             results["success"] = False
 
     if results["errors"]:
         results["success"] = False
+        logger.warning(f"cleanup_workspace: Completed with {len(results['errors'])} errors")
+    else:
+        logger.info(f"cleanup_workspace: Completed successfully, removed {len(results['worktrees_removed'])} worktrees")
 
     return results
 

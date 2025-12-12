@@ -20,6 +20,12 @@ from validation import (
 # Import locking utilities
 from locking import workspace_lock, LockError
 
+# Import logging utilities
+from logging_config import get_logger
+
+# Module logger
+logger = get_logger("git_ops")
+
 
 def run_command(cmd: list[str], cwd: Optional[str] = None) -> Tuple[int, str, str]:
     """Run a shell command and return (returncode, stdout, stderr)."""
@@ -121,6 +127,7 @@ def rebase_branch(
 
     # Get current branch
     current = get_current_branch(worktree_path)
+    logger.info(f"rebase_branch: Rebasing {current} onto {target_branch}")
 
     # Perform rebase
     returncode, stdout, stderr = run_command(
@@ -132,6 +139,7 @@ def rebase_branch(
         has_conflicts = "CONFLICT" in stderr or "conflict" in stdout.lower()
 
         if has_conflicts and abort_on_conflict:
+            logger.warning(f"rebase_branch: Conflicts detected, aborting rebase")
             run_command(["git", "rebase", "--abort"], cwd=worktree_path)
             return {
                 "success": False,
@@ -140,6 +148,7 @@ def rebase_branch(
                 "aborted": True
             }
 
+        logger.error(f"rebase_branch: Rebase failed: {stderr}")
         return {
             "success": False,
             "error": f"Rebase failed: {stderr}",
@@ -147,6 +156,7 @@ def rebase_branch(
             "hint": "Resolve conflicts, then run: git rebase --continue"
         }
 
+    logger.info(f"rebase_branch: Successfully rebased {current} onto {target_branch}")
     return {
         "success": True,
         "branch": current,
@@ -175,6 +185,8 @@ def merge_branch(
     Returns:
         dict with merge results
     """
+    logger.info(f"merge_branch: Merging {source_branch} into {target_branch}")
+
     # Switch to target branch
     returncode, stdout, stderr = run_command(
         ["git", "switch", target_branch],
@@ -182,6 +194,7 @@ def merge_branch(
     )
 
     if returncode != 0:
+        logger.error(f"merge_branch: Failed to switch to {target_branch}: {stderr}")
         return {
             "success": False,
             "error": f"Failed to switch to {target_branch}: {stderr}"
@@ -199,6 +212,7 @@ def merge_branch(
 
     if returncode != 0:
         has_conflicts = "CONFLICT" in stderr or "conflict" in stdout.lower()
+        logger.error(f"merge_branch: Merge failed: {stderr}")
         return {
             "success": False,
             "error": f"Merge failed: {stderr}",
@@ -206,6 +220,7 @@ def merge_branch(
             "hint": "Resolve conflicts, then run: git commit"
         }
 
+    logger.info(f"merge_branch: Successfully merged {source_branch} into {target_branch}")
     return {
         "success": True,
         "source": source_branch,
@@ -286,12 +301,14 @@ def sync_all_worktrees(
         dict with sync results for each worktree
     """
     workspace = Path(workspace_path).resolve()
+    logger.info(f"sync_all_worktrees: Syncing all worktrees with {main_branch}")
 
     # Acquire workspace lock for the entire sync operation
     try:
         with workspace_lock(str(workspace), "sync_all_worktrees"):
             return _sync_all_worktrees_locked(workspace, main_branch)
     except LockError as e:
+        logger.error(f"sync_all_worktrees: Lock acquisition failed: {e}")
         return e.to_dict()
 
 
@@ -313,6 +330,7 @@ def _sync_all_worktrees_locked(workspace: Path, main_branch: str) -> dict:
             worktree_path = item / "worktree"
 
             if not worktree_path.exists():
+                logger.debug(f"sync_all_worktrees: Skipping {task_name} - no worktree")
                 results["skipped"].append({
                     "task": task_name,
                     "reason": "No worktree"
@@ -327,11 +345,13 @@ def _sync_all_worktrees_locked(workspace: Path, main_branch: str) -> dict:
             )
 
             if rebase_result["success"]:
+                logger.info(f"sync_all_worktrees: Synced {task_name}")
                 results["synced"].append({
                     "task": task_name,
                     "branch": rebase_result.get("branch")
                 })
             else:
+                logger.warning(f"sync_all_worktrees: Failed to sync {task_name}: {rebase_result.get('error')}")
                 results["failed"].append({
                     "task": task_name,
                     "error": rebase_result.get("error"),
@@ -339,6 +359,7 @@ def _sync_all_worktrees_locked(workspace: Path, main_branch: str) -> dict:
                 })
                 results["success"] = False
 
+    logger.info(f"sync_all_worktrees: Completed - {len(results['synced'])} synced, {len(results['failed'])} failed, {len(results['skipped'])} skipped")
     return results
 
 
