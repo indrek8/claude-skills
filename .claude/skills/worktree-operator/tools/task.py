@@ -10,7 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Callable
+from dataclasses import dataclass, field
 
 # Import shared validation utilities
 from validation import (
@@ -34,6 +35,161 @@ def run_command(cmd: list[str], cwd: Optional[str] = None) -> Tuple[int, str, st
         text=True
     )
     return result.returncode, result.stdout, result.stderr
+
+
+@dataclass
+class TransactionStep:
+    """Represents a step in a transaction with its rollback action."""
+    name: str
+    rollback_fn: Optional[Callable[[], bool]] = None
+    completed: bool = False
+    error: Optional[str] = None
+
+
+class AcceptTransaction:
+    """
+    Manages transactional accept with full rollback capability.
+
+    Tracks all operations and can roll back on any failure to restore
+    the workspace to its original state.
+    """
+
+    def __init__(
+        self,
+        repo_path: Path,
+        worktree_path: Path,
+        task_dir: Path,
+        main_branch: str,
+        sub_branch: str
+    ):
+        self.repo_path = repo_path
+        self.worktree_path = worktree_path
+        self.task_dir = task_dir
+        self.main_branch = main_branch
+        self.sub_branch = sub_branch
+
+        self.steps: List[TransactionStep] = []
+        self.original_main_sha: Optional[str] = None
+        self.original_worktree_sha: Optional[str] = None
+        self.original_branch_in_repo: Optional[str] = None
+        self.rolled_back: bool = False
+        self.log: List[str] = []
+
+    def checkpoint(self) -> bool:
+        """
+        Save the current state for potential rollback.
+
+        Returns:
+            True if checkpoint was successful
+        """
+        # Get current commit SHA on main branch
+        returncode, stdout, _ = run_command(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(self.repo_path)
+        )
+        if returncode == 0:
+            self.original_main_sha = stdout.strip()
+
+        # Get current commit SHA on worktree
+        if self.worktree_path.exists():
+            returncode, stdout, _ = run_command(
+                ["git", "rev-parse", "HEAD"],
+                cwd=str(self.worktree_path)
+            )
+            if returncode == 0:
+                self.original_worktree_sha = stdout.strip()
+
+        # Get current branch in repo
+        returncode, stdout, _ = run_command(
+            ["git", "branch", "--show-current"],
+            cwd=str(self.repo_path)
+        )
+        if returncode == 0:
+            self.original_branch_in_repo = stdout.strip()
+
+        self._log(f"Checkpoint: main@{self.original_main_sha[:8] if self.original_main_sha else 'unknown'}, "
+                  f"worktree@{self.original_worktree_sha[:8] if self.original_worktree_sha else 'unknown'}")
+
+        return self.original_main_sha is not None
+
+    def add_step(self, name: str, rollback_fn: Optional[Callable[[], bool]] = None) -> TransactionStep:
+        """Add a step to the transaction."""
+        step = TransactionStep(name=name, rollback_fn=rollback_fn)
+        self.steps.append(step)
+        self._log(f"Step: {name}")
+        return step
+
+    def complete_step(self, step: TransactionStep):
+        """Mark a step as completed."""
+        step.completed = True
+        self._log(f"✓ Completed: {step.name}")
+
+    def fail_step(self, step: TransactionStep, error: str):
+        """Mark a step as failed."""
+        step.error = error
+        self._log(f"✗ Failed: {step.name} - {error}")
+
+    def rollback(self) -> dict:
+        """
+        Roll back all completed steps in reverse order.
+
+        Returns:
+            dict with rollback results
+        """
+        if self.rolled_back:
+            return {"success": True, "message": "Already rolled back"}
+
+        self._log("Starting rollback...")
+        rollback_errors = []
+
+        # Rollback steps in reverse order
+        for step in reversed(self.steps):
+            if step.completed and step.rollback_fn:
+                self._log(f"Rolling back: {step.name}")
+                try:
+                    success = step.rollback_fn()
+                    if not success:
+                        rollback_errors.append(f"Failed to rollback: {step.name}")
+                except Exception as e:
+                    rollback_errors.append(f"Error rolling back {step.name}: {str(e)}")
+
+        # Always try to restore repo to original branch
+        if self.original_branch_in_repo:
+            returncode, _, stderr = run_command(
+                ["git", "switch", self.original_branch_in_repo],
+                cwd=str(self.repo_path)
+            )
+            if returncode != 0:
+                self._log(f"Warning: Could not restore original branch: {stderr}")
+
+        # If main branch was modified, try to restore it
+        if self.original_main_sha:
+            # Check current state
+            returncode, stdout, _ = run_command(
+                ["git", "rev-parse", self.main_branch],
+                cwd=str(self.repo_path)
+            )
+            current_sha = stdout.strip() if returncode == 0 else None
+
+            if current_sha and current_sha != self.original_main_sha:
+                self._log(f"Restoring main branch to {self.original_main_sha[:8]}")
+                run_command(
+                    ["git", "update-ref", f"refs/heads/{self.main_branch}", self.original_main_sha],
+                    cwd=str(self.repo_path)
+                )
+
+        self.rolled_back = True
+        self._log("Rollback complete")
+
+        return {
+            "success": len(rollback_errors) == 0,
+            "errors": rollback_errors,
+            "log": self.log
+        }
+
+    def _log(self, message: str):
+        """Add a message to the transaction log."""
+        self.log.append(message)
 
 
 def create_task(
@@ -325,6 +481,9 @@ def accept_task(
     """
     Accept a task: rebase, merge into main branch, cleanup.
 
+    This function is fully transactional - on any failure, all changes
+    are rolled back to restore the workspace to its original state.
+
     Args:
         ticket: Ticket ID
         task_name: Task name
@@ -357,7 +516,8 @@ def accept_task(
     results = {
         "success": True,
         "steps": [],
-        "errors": []
+        "errors": [],
+        "transactional": True
     }
 
     if not worktree_path.exists():
@@ -366,40 +526,124 @@ def accept_task(
             "error": f"Worktree not found at {worktree_path}"
         }
 
+    # Initialize transaction
+    txn = AcceptTransaction(
+        repo_path=repo_path,
+        worktree_path=worktree_path,
+        task_dir=task_dir,
+        main_branch=main_branch,
+        sub_branch=sub_branch
+    )
+
+    # Checkpoint current state
+    if not txn.checkpoint():
+        return {
+            "success": False,
+            "error": "Failed to checkpoint current state",
+            "hint": "Ensure the repo is in a valid git state"
+        }
+
+    # Helper to handle failure with rollback
+    def fail_with_rollback(error_msg: str, step: TransactionStep = None, hint: str = None):
+        if step:
+            txn.fail_step(step, error_msg)
+        results["success"] = False
+        results["errors"].append(error_msg)
+
+        # Rollback all completed steps
+        rollback_result = txn.rollback()
+        results["rolled_back"] = True
+        results["rollback_success"] = rollback_result["success"]
+        if not rollback_result["success"]:
+            results["rollback_errors"] = rollback_result["errors"]
+
+        results["transaction_log"] = txn.log
+        if hint:
+            results["hint"] = hint
+        return results
+
     # Step 1: Rebase sub-branch onto main
+    step1 = txn.add_step("Rebase sub-branch")
     results["steps"].append("Rebasing sub-branch...")
+
+    # Create rollback function for rebase (abort if in progress, or reset to original)
+    def rollback_rebase() -> bool:
+        # Check if rebase is in progress
+        rebase_dir = worktree_path / ".git" / "rebase-merge"
+        if rebase_dir.exists() or (worktree_path / ".git" / "rebase-apply").exists():
+            run_command(["git", "rebase", "--abort"], cwd=str(worktree_path))
+        # Reset to original state
+        if txn.original_worktree_sha:
+            run_command(["git", "reset", "--hard", txn.original_worktree_sha], cwd=str(worktree_path))
+        return True
+
+    step1.rollback_fn = rollback_rebase
+
     sync_result = sync_task(task_name, main_branch, str(workspace))
     if not sync_result["success"]:
-        results["success"] = False
-        results["errors"].append(f"Rebase failed: {sync_result.get('error')}")
-        return results
+        return fail_with_rollback(
+            f"Rebase failed: {sync_result.get('error')}",
+            step1,
+            sync_result.get('hint')
+        )
+    txn.complete_step(step1)
     results["steps"].append("✓ Rebase complete")
 
     # Step 1.5: Verify tests pass after rebase
+    step1_5 = txn.add_step("Test after rebase")
+    step1_5.rollback_fn = rollback_rebase  # Same rollback as rebase
     results["steps"].append("Running tests after rebase...")
+
     test_result = verify_tests_pass(str(worktree_path), workspace_path=str(workspace))
     if not test_result["passed"]:
-        results["success"] = False
-        results["errors"].append(f"Tests failed after rebase: {test_result.get('error', 'Unknown error')}")
         results["test_output"] = test_result
-        results["hint"] = "Fix test failures in the worktree before accepting"
-        return results
+        return fail_with_rollback(
+            f"Tests failed after rebase: {test_result.get('error', 'Unknown error')}",
+            step1_5,
+            "Fix test failures in the worktree before accepting"
+        )
+    txn.complete_step(step1_5)
     results["steps"].append(f"✓ Tests passed ({test_result.get('duration', '?')}s)")
     results["test_after_rebase"] = test_result
 
     # Step 2: Switch to main branch in repo
+    step2 = txn.add_step("Switch to main branch")
+
+    def rollback_switch() -> bool:
+        if txn.original_branch_in_repo:
+            returncode, _, _ = run_command(
+                ["git", "switch", txn.original_branch_in_repo],
+                cwd=str(repo_path)
+            )
+            return returncode == 0
+        return True
+
+    step2.rollback_fn = rollback_switch
     results["steps"].append("Switching to main branch...")
+
     returncode, stdout, stderr = run_command(
         ["git", "switch", main_branch],
         cwd=str(repo_path)
     )
     if returncode != 0:
-        results["success"] = False
-        results["errors"].append(f"Failed to switch branch: {stderr}")
-        return results
+        return fail_with_rollback(f"Failed to switch branch: {stderr}", step2)
+    txn.complete_step(step2)
     results["steps"].append("✓ Switched to main branch")
 
     # Step 3: Merge with --no-ff
+    step3 = txn.add_step("Merge sub-branch")
+
+    def rollback_merge() -> bool:
+        # Reset main branch to original SHA
+        if txn.original_main_sha:
+            returncode, _, _ = run_command(
+                ["git", "reset", "--hard", txn.original_main_sha],
+                cwd=str(repo_path)
+            )
+            return returncode == 0
+        return True
+
+    step3.rollback_fn = rollback_merge
     results["steps"].append("Merging sub-branch...")
 
     # Try to get first line of spec for commit message
@@ -409,7 +653,6 @@ def accept_task(
         lines = spec_path.read_text().split("\n")
         for line in lines:
             if line.startswith("## Objective"):
-                # Get next non-empty line
                 idx = lines.index(line)
                 for next_line in lines[idx+1:]:
                     if next_line.strip() and not next_line.startswith("#"):
@@ -422,47 +665,53 @@ def accept_task(
         cwd=str(repo_path)
     )
     if returncode != 0:
-        results["success"] = False
-        results["errors"].append(f"Merge failed: {stderr}")
-        return results
+        return fail_with_rollback(f"Merge failed: {stderr}", step3)
+    txn.complete_step(step3)
     results["steps"].append("✓ Merge complete")
     results["merge_commit"] = merge_msg
 
     # Step 3.5: Verify tests pass after merge
+    step3_5 = txn.add_step("Test after merge")
+    step3_5.rollback_fn = rollback_merge  # Same rollback as merge
     results["steps"].append("Running tests after merge...")
+
     test_result = verify_tests_pass(str(repo_path), workspace_path=str(workspace))
     if not test_result["passed"]:
-        # Tests failed after merge - revert the merge!
-        results["steps"].append("✗ Tests failed after merge, reverting...")
-        revert_returncode, _, revert_stderr = run_command(
-            ["git", "reset", "--hard", "HEAD~1"],
-            cwd=str(repo_path)
-        )
-        if revert_returncode == 0:
-            results["steps"].append("✓ Merge reverted")
-            results["reverted"] = True
-        else:
-            results["errors"].append(f"Failed to revert merge: {revert_stderr}")
-
-        results["success"] = False
-        results["errors"].append(f"Tests failed after merge: {test_result.get('error', 'Unknown error')}")
         results["test_output"] = test_result
-        results["hint"] = "The merge was reverted. Fix test failures and try again."
-        return results
+        return fail_with_rollback(
+            f"Tests failed after merge: {test_result.get('error', 'Unknown error')}",
+            step3_5,
+            "Tests failed after merge. Fix and try again."
+        )
+    txn.complete_step(step3_5)
     results["steps"].append(f"✓ Tests passed after merge ({test_result.get('duration', '?')}s)")
     results["test_after_merge"] = test_result
 
     # Step 4: Push (optional)
+    # Note: Push is a point of no return - we don't rollback after push succeeds
     if push:
+        step4 = txn.add_step("Push to origin")
+        # No rollback for push - it's a point of no return
+        # But we can still fail before completing the step
         results["steps"].append("Pushing main branch...")
+
         returncode, stdout, stderr = run_command(
             ["git", "push", "origin", main_branch],
             cwd=str(repo_path)
         )
         if returncode != 0:
-            results["errors"].append(f"Push failed (non-fatal): {stderr}")
-        else:
-            results["steps"].append("✓ Pushed to origin")
+            # Push failed - rollback everything
+            return fail_with_rollback(
+                f"Push failed: {stderr}",
+                step4,
+                "Push to origin failed. Local changes have been rolled back."
+            )
+        txn.complete_step(step4)
+        results["steps"].append("✓ Pushed to origin")
+
+    # === POINT OF NO RETURN ===
+    # After push, we commit to cleanup. Cleanup failures are non-fatal.
+    results["point_of_no_return"] = True
 
     # Step 5: Remove worktree
     results["steps"].append("Removing worktree...")
@@ -472,11 +721,16 @@ def accept_task(
     )
     if returncode != 0:
         # Try force remove
-        run_command(
+        returncode, _, _ = run_command(
             ["git", "worktree", "remove", str(worktree_path), "--force"],
             cwd=str(repo_path)
         )
-    results["steps"].append("✓ Worktree removed")
+        if returncode != 0:
+            results["errors"].append(f"Warning: Could not remove worktree (non-fatal)")
+        else:
+            results["steps"].append("✓ Worktree removed (forced)")
+    else:
+        results["steps"].append("✓ Worktree removed")
 
     # Step 6: Delete local branch
     results["steps"].append("Deleting local branch...")
@@ -486,8 +740,16 @@ def accept_task(
     )
     if returncode != 0:
         # Force delete if needed
-        run_command(["git", "branch", "-D", sub_branch], cwd=str(repo_path))
-    results["steps"].append("✓ Local branch deleted")
+        returncode, _, _ = run_command(
+            ["git", "branch", "-D", sub_branch],
+            cwd=str(repo_path)
+        )
+        if returncode != 0:
+            results["errors"].append(f"Warning: Could not delete local branch (non-fatal)")
+        else:
+            results["steps"].append("✓ Local branch deleted (forced)")
+    else:
+        results["steps"].append("✓ Local branch deleted")
 
     # Step 7: Delete remote branch (optional)
     if delete_remote_branch:
@@ -502,6 +764,7 @@ def accept_task(
             results["steps"].append("- Remote branch not found or already deleted")
 
     results["message"] = f"Task '{task_name}' accepted and merged into {main_branch}"
+    results["transaction_log"] = txn.log
     return results
 
 
