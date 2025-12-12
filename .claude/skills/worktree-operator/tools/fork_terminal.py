@@ -26,6 +26,17 @@ from logging_config import get_logger
 # Import plan parser for dependency checking
 from plan_parser import check_dependencies
 
+# Import error utilities
+from errors import (
+    make_error,
+    task_not_found_error,
+    worktree_not_found_error,
+    spec_not_found_error,
+    terminal_not_supported_error,
+    no_terminal_found_error,
+    subagent_spawn_failed_error,
+)
+
 # Module logger
 logger = get_logger("fork_terminal")
 
@@ -157,18 +168,14 @@ def fork_terminal(command: str, working_dir: str = None) -> dict:
             except Exception:
                 continue
 
-        return {
-            "success": False,
-            "error": "No supported terminal emulator found (tried gnome-terminal, konsole, xterm)",
-            "platform": "Linux"
-        }
+        result = no_terminal_found_error()
+        result["platform"] = "Linux"
+        return result
 
     else:
-        return {
-            "success": False,
-            "error": f"Platform {system} not supported",
-            "platform": system
-        }
+        result = terminal_not_supported_error(system)
+        result["platform"] = system
+        return result
 
 
 def spawn_forked_subagent(
@@ -234,26 +241,14 @@ def spawn_forked_subagent(
 
     # Validate task exists
     if not task_folder.exists():
-        return {
-            "success": False,
-            "error": f"Task folder not found: {task_folder}",
-            "hint": "Create the task first with 'operator create task'"
-        }
+        return task_not_found_error(task_name, str(task_folder))
 
     if not worktree_path.exists():
-        return {
-            "success": False,
-            "error": f"Worktree not found: {worktree_path}",
-            "hint": "The task folder exists but worktree is missing. Try recreating the task."
-        }
+        return worktree_not_found_error(task_name, str(worktree_path))
 
     spec_path = task_folder / "spec.md"
     if not spec_path.exists():
-        return {
-            "success": False,
-            "error": f"Spec not found: {spec_path}",
-            "hint": "Create spec.md in the task folder before spawning."
-        }
+        return spec_not_found_error(task_name, str(spec_path))
 
     # Check if this is an iteration
     feedback_path = task_folder / "feedback.md"

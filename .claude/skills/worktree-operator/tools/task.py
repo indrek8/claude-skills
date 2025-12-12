@@ -34,6 +34,19 @@ from logging_config import get_logger
 # Import plan parser for dependency checking
 from plan_parser import check_dependencies
 
+# Import error utilities
+from errors import (
+    make_error,
+    repo_not_found_error,
+    task_exists_error,
+    task_not_found_error,
+    worktree_not_found_error,
+    worktree_create_failed_error,
+    rebase_conflict_error,
+    tests_failed_error,
+    push_failed_error,
+)
+
 # Module logger
 logger = get_logger("task")
 
@@ -247,29 +260,17 @@ def create_task(
 
     # Validate repo exists
     if not repo_path.exists():
-        return {
-            "success": False,
-            "error": f"Repository not found at {repo_path}",
-            "hint": "Run workspace init first"
-        }
+        return repo_not_found_error(str(repo_path))
 
     # Acquire workspace lock to prevent race conditions
     try:
         with workspace_lock(str(workspace), f"create_task:{task_name}"):
-            logger.info(f"create_task: Creating task '{task_name}' for ticket {ticket}")
-
             # Check if task already exists (inside lock to prevent race)
             if task_dir.exists():
-                logger.warning(f"create_task: Task folder already exists: {task_dir}")
-                return {
-                    "success": False,
-                    "error": f"Task folder already exists: {task_dir}",
-                    "hint": "Use a different task name or remove existing folder"
-                }
+                return task_exists_error(task_name, str(task_dir))
 
             # Create task folder structure
             task_dir.mkdir(parents=True)
-            logger.debug(f"create_task: Created task directory {task_dir}")
 
             # Create task files
             today = datetime.now().strftime("%Y-%m-%d")
@@ -336,17 +337,11 @@ _Describe the objective here_
 
             if returncode != 0:
                 # Clean up on failure
-                logger.error(f"create_task: Failed to create worktree: {stderr}")
                 import shutil
                 shutil.rmtree(task_dir)
-                return {
-                    "success": False,
-                    "error": f"Failed to create worktree: {stderr}",
-                    "command": f"git worktree add {worktree_path} -b {sub_branch} {main_branch}"
-                }
+                return worktree_create_failed_error(str(worktree_path), sub_branch, stderr)
 
-            logger.info(f"create_task: Task '{task_name}' created successfully on branch {sub_branch}")
-            result = {
+            return {
                 "success": True,
                 "task_dir": str(task_dir),
                 "worktree_path": str(worktree_path),
@@ -355,16 +350,6 @@ _Describe the objective here_
                 "files_created": ["spec.md", "feedback.md", "results.md"],
                 "message": f"Task '{task_name}' created successfully"
             }
-
-            # Check dependencies and add warning if not met
-            dep_check = check_dependencies(task_name, str(workspace))
-            if dep_check["success"] and dep_check.get("task_exists"):
-                if not dep_check["can_spawn"]:
-                    result["warning"] = f"Dependencies not met: {', '.join(dep_check.get('missing', []))}"
-                    result["missing_dependencies"] = dep_check.get("missing", [])
-                    result["hint"] = "Complete dependencies before spawning, or use --force to override"
-
-            return result
 
     except LockError as e:
         return e.to_dict()
@@ -402,13 +387,7 @@ def sync_task(
     worktree_path = task_dir / "worktree"
 
     if not worktree_path.exists():
-        return {
-            "success": False,
-            "error": f"Worktree not found at {worktree_path}",
-            "hint": "Task may not exist or worktree was removed"
-        }
-
-    logger.info(f"sync_task: Syncing task '{task_name}' with {main_branch}")
+        return worktree_not_found_error(task_name, str(worktree_path))
 
     # Fetch latest
     returncode, stdout, stderr = run_command(
@@ -425,22 +404,23 @@ def sync_task(
     if returncode != 0:
         # Check if it's a conflict
         if "CONFLICT" in stderr or "conflict" in stdout.lower():
-            logger.warning(f"sync_task: Rebase has conflicts for task '{task_name}'")
-            return {
-                "success": False,
-                "error": "Rebase has conflicts",
-                "conflicts": True,
-                "stderr": stderr,
-                "hint": "Resolve conflicts manually, then run: git rebase --continue"
-            }
-        logger.error(f"sync_task: Rebase failed for task '{task_name}': {stderr}")
-        return {
-            "success": False,
-            "error": f"Rebase failed: {stderr}",
-            "command": f"git rebase {main_branch}"
-        }
+            result = rebase_conflict_error(task_name, main_branch)
+            result["conflicts"] = True
+            result["stderr"] = stderr
+            return result
+        return make_error(
+            f"Rebase failed: {stderr}",
+            hint="Check the git error message and resolve any issues.",
+            recovery_options=[
+                f"Check worktree status: cd {worktree_path} && git status",
+                "Abort any in-progress rebase: git rebase --abort",
+                f"Reset to start over: operator reset {task_name}"
+            ],
+            error_code="REBASE_FAILED",
+            task_name=task_name,
+            main_branch=main_branch
+        )
 
-    logger.info(f"sync_task: Task '{task_name}' synced successfully with {main_branch}")
     return {
         "success": True,
         "task_name": task_name,
@@ -481,12 +461,7 @@ def reset_task(
     worktree_path = task_dir / "worktree"
 
     if not worktree_path.exists():
-        return {
-            "success": False,
-            "error": f"Worktree not found at {worktree_path}"
-        }
-
-    logger.info(f"reset_task: Resetting task '{task_name}' to {main_branch}")
+        return worktree_not_found_error(task_name, str(worktree_path))
 
     # Fetch latest
     run_command(["git", "fetch", "origin"], cwd=str(worktree_path))
@@ -498,16 +473,22 @@ def reset_task(
     )
 
     if returncode != 0:
-        logger.error(f"reset_task: Reset failed for task '{task_name}': {stderr}")
-        return {
-            "success": False,
-            "error": f"Reset failed: {stderr}"
-        }
+        return make_error(
+            f"Reset failed: {stderr}",
+            hint="Git reset encountered an issue.",
+            recovery_options=[
+                f"Check the branch exists: git branch -a | grep {main_branch}",
+                "Try manual reset: git reset --hard HEAD",
+                "Check for uncommitted changes: git status"
+            ],
+            error_code="RESET_FAILED",
+            task_name=task_name,
+            main_branch=main_branch
+        )
 
     # Clean untracked files
     run_command(["git", "clean", "-fd"], cwd=str(worktree_path))
 
-    logger.info(f"reset_task: Task '{task_name}' reset successfully to {main_branch}")
     return {
         "success": True,
         "task_name": task_name,
@@ -563,13 +544,9 @@ def accept_task(
     sub_branch = f"feature/{ticket}/{task_name}"
 
     if not worktree_path.exists():
-        return {
-            "success": False,
-            "error": f"Worktree not found at {worktree_path}"
-        }
+        return worktree_not_found_error(task_name, str(worktree_path))
 
     # Acquire workspace lock for the entire accept operation
-    logger.info(f"accept_task: Starting acceptance for task '{task_name}'")
     try:
         with workspace_lock(str(workspace), f"accept_task:{task_name}"):
             return _accept_task_locked(
@@ -577,7 +554,6 @@ def accept_task(
                 task_dir, worktree_path, sub_branch, push, delete_remote_branch
             )
     except LockError as e:
-        logger.error(f"accept_task: Lock acquisition failed: {e}")
         return e.to_dict()
 
 
@@ -614,30 +590,30 @@ def _accept_task_locked(
 
     # Checkpoint current state
     if not txn.checkpoint():
-        return {
-            "success": False,
-            "error": "Failed to checkpoint current state",
-            "hint": "Ensure the repo is in a valid git state"
-        }
+        return make_error(
+            "Failed to checkpoint current state",
+            hint="Ensure the repo is in a valid git state.",
+            recovery_options=[
+                "Check git status in the repo: git status",
+                "Ensure you're on a valid branch: git branch --show-current",
+                "Try running: git fsck"
+            ],
+            error_code="CHECKPOINT_FAILED"
+        )
 
     # Helper to handle failure with rollback
     def fail_with_rollback(error_msg: str, step: TransactionStep = None, hint: str = None):
-        logger.error(f"accept_task: {error_msg}")
         if step:
             txn.fail_step(step, error_msg)
         results["success"] = False
         results["errors"].append(error_msg)
 
         # Rollback all completed steps
-        logger.info(f"accept_task: Rolling back transaction")
         rollback_result = txn.rollback()
         results["rolled_back"] = True
         results["rollback_success"] = rollback_result["success"]
         if not rollback_result["success"]:
-            logger.error(f"accept_task: Rollback had errors: {rollback_result['errors']}")
             results["rollback_errors"] = rollback_result["errors"]
-        else:
-            logger.info(f"accept_task: Rollback successful")
 
         results["transaction_log"] = txn.log
         if hint:
@@ -845,7 +821,6 @@ def _accept_task_locked(
         else:
             results["steps"].append("- Remote branch not found or already deleted")
 
-    logger.info(f"accept_task: Task '{task_name}' accepted and merged into {main_branch}")
     results["message"] = f"Task '{task_name}' accepted and merged into {main_branch}"
     results["transaction_log"] = txn.log
     return results
@@ -883,8 +858,7 @@ def task_status(task_name: str, workspace_path: str = ".") -> dict:
     }
 
     if not task_dir.exists():
-        status["error"] = "Task folder not found"
-        return status
+        return task_not_found_error(task_name, str(task_dir))
 
     # Check files
     status["files"] = {
