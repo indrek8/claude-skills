@@ -10,6 +10,13 @@ import sys
 from pathlib import Path
 from typing import Optional, Tuple, List
 
+# Import shared validation utilities
+from validation import (
+    ValidationError,
+    validate_branch_name,
+    validate_path,
+)
+
 
 def run_command(cmd: list[str], cwd: Optional[str] = None) -> Tuple[int, str, str]:
     """Run a shell command and return (returncode, stdout, stderr)."""

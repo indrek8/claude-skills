@@ -1,369 +1,653 @@
-# Plan: Build Multi-Agent Worktree Skills
+# Plan: Workflow Hardening & Improvements
 
 ## Status: IN PROGRESS
-## Target: Claude Code Skills for Operator/Sub-Agent Workflow
+## Target: Production-Ready Multi-Agent Worktree System
 
 ---
 
 ## Overview
 
-Build a set of Claude Code skills that implement the operator/sub-agent workflow documented in README.md. The skills will enable:
+Following comprehensive analysis, this plan addresses all identified issues to make the multi-agent worktree system production-ready. Issues are organized by priority: Security → Reliability → Robustness → Usability.
 
-1. **Operator skill** - Orchestrates work: init workspace, plan, create tasks, spawn sub-agents, review, accept/reject, merge
-2. **Sub-agent skill** - Implements work: read spec, work in worktree, commit, write results
-3. **Common templates** - Shared templates for spec.md, feedback.md, results.md
+**Analysis Summary:** 7.5/10 - Solid foundation with implementation gaps
+**Estimated Total Effort:** 100-120 hours
 
 ---
 
 ## Tasks
 
-### 1. setup-skill-structure
+### 1. fix-shell-injection
 - Status: COMPLETED
+- Priority: CRITICAL
 - Dependencies: None
-- Description: Create the `.claude/skills/` directory structure
+- Description: Fix command injection vulnerabilities in fork_terminal.py
+
+**Problem:**
+- Line 25-27: Shell command escaping only handles `\` and `"`
+- Missing escapes for: `$`, backticks, `;`, newlines
+- Task names and prompts can inject arbitrary commands
 
 **Deliverables:**
+- Use `shlex.quote()` for all shell arguments
+- Validate task_name and ticket format (alphanumeric + hyphen only)
+- Add input sanitization function
+- Add unit tests for injection attempts
+
+**Files to modify:**
+- `.claude/skills/worktree-operator/tools/fork_terminal.py`
+
+**Acceptance Criteria:**
+- [ ] All shell arguments properly escaped with shlex.quote()
+- [ ] Input validation rejects special characters in task names
+- [ ] Unit tests cover injection attack vectors
+- [ ] No subprocess calls with shell=True and user input
+
+---
+
+### 2. add-input-validation
+- Status: COMPLETED
+- Priority: CRITICAL
+- Dependencies: None
+- Description: Add input validation across all tools
+
+**Problem:**
+- Task names, ticket IDs, branch names not validated
+- Path traversal possible in workspace paths
+- No length limits on inputs
+
+**Deliverables:**
+- Create `validation.py` with validators:
+  - `validate_task_name(name)` - alphanumeric, hyphens, max 50 chars
+  - `validate_ticket_id(ticket)` - pattern like K-123, PROJ-456
+  - `validate_branch_name(branch)` - git-safe characters
+  - `validate_path(path)` - no traversal, absolute paths only
+- Integrate validators into all tool functions
+- Raise clear errors on validation failure
+
+**Files to create:**
+- `.claude/skills/worktree-operator/tools/validation.py`
+
+**Files to modify:**
+- `.claude/skills/worktree-operator/tools/workspace.py`
+- `.claude/skills/worktree-operator/tools/task.py`
+- `.claude/skills/worktree-operator/tools/git_ops.py`
+- `.claude/skills/worktree-operator/tools/fork_terminal.py`
+
+**Acceptance Criteria:**
+- [ ] All public functions validate inputs before processing
+- [ ] Validation errors include expected format
+- [ ] Path traversal attacks blocked
+- [ ] Unit tests for each validator
+
+---
+
+### 3. add-subagent-health-check
+- Status: PENDING
+- Priority: HIGH
+- Dependencies: None
+- Description: Implement mechanism to detect hung/crashed sub-agents
+
+**Problem:**
+- No way to know if forked sub-agent is running, stuck, or crashed
+- Operator waits indefinitely for completion
+- No timeout mechanism
+
+**Deliverables:**
+- Sub-agent writes `.subagent-status` file on start
+- Sub-agent updates status periodically (heartbeat)
+- Sub-agent writes final status on completion/error
+- Operator can query status: `operator status {task_name}`
+- Add timeout detection (no heartbeat in X minutes)
+
+**Status file format:**
+```json
+{
+  "status": "running|completed|failed",
+  "started_at": "ISO timestamp",
+  "last_heartbeat": "ISO timestamp",
+  "progress": "Reading spec|Implementing|Testing|Writing results",
+  "error": null
+}
 ```
-.claude/skills/
-├── worktree-operator/
-│   ├── SKILL.md
-│   ├── cookbook/
-│   ├── prompts/
-│   └── tools/
-├── worktree-subagent/
-│   ├── SKILL.md
-│   ├── cookbook/
-│   └── prompts/
-└── worktree-common/
-    └── templates/
+
+**Files to modify:**
+- `.claude/skills/worktree-operator/tools/fork_terminal.py`
+- `.claude/skills/worktree-operator/SKILL.md`
+- `.claude/skills/worktree-subagent/SKILL.md`
+
+**Files to create:**
+- `.claude/skills/worktree-operator/tools/health_check.py`
+
+**Acceptance Criteria:**
+- [ ] Sub-agent creates status file on start
+- [ ] Heartbeat updates every 60 seconds
+- [ ] Operator can check sub-agent status
+- [ ] Timeout warning after 10 minutes no heartbeat
+- [ ] Status shows in `operator status` output
+
+---
+
+### 4. add-test-verification-post-merge
+- Status: PENDING
+- Priority: HIGH
+- Dependencies: None
+- Description: Verify tests pass after rebase and merge before completing accept
+
+**Problem:**
+- `accept_task()` merges without verifying tests pass
+- Broken code can reach main branch
+- No automated rollback on test failure
+
+**Deliverables:**
+- Add test runner detection (npm test, pytest, go test, cargo test)
+- Run tests after rebase, abort if fail
+- Run tests after merge, revert if fail
+- Make test command configurable in workspace config
+
+**Config format (workspace.json):**
+```json
+{
+  "test_command": "npm test",
+  "test_timeout": 300
+}
 ```
 
+**Files to modify:**
+- `.claude/skills/worktree-operator/tools/task.py` (accept_task function)
+- `.claude/skills/worktree-operator/cookbook/accept-task.md`
+
+**Files to create:**
+- `.claude/skills/worktree-operator/tools/test_runner.py`
+
+**Acceptance Criteria:**
+- [ ] Tests run after rebase, blocks merge if fail
+- [ ] Tests run after merge, reverts if fail
+- [ ] Test command auto-detected or configurable
+- [ ] Clear error message on test failure with logs
+- [ ] Cookbook documents test verification step
+
 ---
 
-### 2. create-common-templates
-- Status: COMPLETED
-- Dependencies: setup-skill-structure
-- Description: Create shared templates used by operator and sub-agent
+### 5. add-transactional-accept
+- Status: PENDING
+- Priority: HIGH
+- Dependencies: add-test-verification-post-merge
+- Description: Make accept_task() atomic with rollback on failure
+
+**Problem:**
+- Multi-step accept can leave inconsistent state
+- If step 5 fails, steps 1-4 already completed
+- No way to undo partial accept
 
 **Deliverables:**
-- `worktree-common/templates/spec.md` - Task specification template
-- `worktree-common/templates/feedback.md` - Iteration feedback template
-- `worktree-common/templates/results.md` - Sub-agent results template
-- `worktree-common/templates/plan.md` - Plan.md template
+- Record initial state (branch HEADs, worktree list) before accept
+- Wrap all steps in try/except
+- On any failure, rollback to initial state
+- Add `--dry-run` option to preview changes
+
+**Rollback actions:**
+- Reset main branch to initial HEAD
+- Restore worktree if removed
+- Restore sub-branch if deleted
+
+**Files to modify:**
+- `.claude/skills/worktree-operator/tools/task.py`
+- `.claude/skills/worktree-operator/tools/git_ops.py`
+
+**Acceptance Criteria:**
+- [ ] Initial state recorded before any changes
+- [ ] All failures trigger automatic rollback
+- [ ] Rollback restores exact initial state
+- [ ] `--dry-run` shows what would happen
+- [ ] Transaction log written for debugging
 
 ---
 
-### 3. create-operator-tools
-- Status: COMPLETED
-- Dependencies: setup-skill-structure
-- Description: Create Python tools for operator workspace/task management
+### 6. fix-race-conditions
+- Status: PENDING
+- Priority: HIGH
+- Dependencies: add-input-validation
+- Description: Prevent race conditions in concurrent operations
+
+**Problem:**
+- Simultaneous task creation can create same branch twice
+- Accept during sync causes inconsistent state
+- No locking mechanism
 
 **Deliverables:**
-- `worktree-operator/tools/workspace.py`
-  - `init_workspace(repo_url, branch, workspace_path)` - Clone and setup
-  - `workspace_status()` - Show current state
-  - `cleanup_workspace()` - Remove all worktrees, cleanup
+- Add file-based locking for workspace operations
+- Lock acquired before: create_task, accept_task, sync_all
+- Lock file: `.workspace.lock` with PID and timestamp
+- Stale lock detection (process not running)
 
-- `worktree-operator/tools/task.py`
-  - `create_task(ticket, task_name, main_branch)` - Create folder + worktree
-  - `sync_task(task_name, main_branch)` - Rebase worktree
-  - `reset_task(task_name, main_branch)` - Hard reset worktree
-  - `accept_task(ticket, task_name, main_branch)` - Rebase + merge + cleanup
-  - `task_status(task_name)` - Show task state
+**Files to create:**
+- `.claude/skills/worktree-operator/tools/locking.py`
 
-- `worktree-operator/tools/git_ops.py`
-  - `rebase_branch(worktree_path, target_branch)` - Rebase operation
-  - `merge_branch(repo_path, source_branch, target_branch)` - Merge with --no-ff
-  - `cleanup_branch(repo_path, branch_name)` - Delete local + remote branch
-  - `sync_all_worktrees(workspace_path, main_branch)` - Rebase all active
+**Files to modify:**
+- `.claude/skills/worktree-operator/tools/task.py`
+- `.claude/skills/worktree-operator/tools/workspace.py`
+
+**Acceptance Criteria:**
+- [ ] Concurrent create_task fails gracefully
+- [ ] Lock prevents concurrent accept operations
+- [ ] Stale locks auto-cleaned after 1 hour
+- [ ] Lock holder info in error message
+- [ ] Tests for concurrent access scenarios
 
 ---
 
-### 4. create-operator-skill-definition
-- Status: COMPLETED
-- Dependencies: create-operator-tools
-- Description: Create SKILL.md that defines operator triggers and behavior
+### 7. add-comprehensive-logging
+- Status: PENDING
+- Priority: MEDIUM
+- Dependencies: None
+- Description: Replace print statements with structured logging
+
+**Problem:**
+- Only print() statements, no persistent logs
+- No timestamps or operation context
+- Can't audit what happened
 
 **Deliverables:**
-- `worktree-operator/SKILL.md`
+- Create logging configuration module
+- Log levels: DEBUG, INFO, WARNING, ERROR
+- Log to file: `workspace.log` (rotating, 10MB max, 5 files)
+- Structured format with: timestamp, level, operation, task, details
+- Add log viewing: `operator logs [--tail N] [--level LEVEL]`
 
-**Triggers to implement:**
-| Trigger | Action |
-|---------|--------|
-| "operator init workspace" | init-workspace.md cookbook |
-| "operator plan" / "operator analyze" | create-plan.md cookbook |
-| "operator create task X" | create-task.md cookbook |
-| "operator spawn/run subagent X" | spawn-subagent.md cookbook |
-| "operator review X" | review-task.md cookbook |
-| "operator accept X" | accept-task.md cookbook |
-| "operator iterate X" / "operator feedback X" | reject-iterate.md cookbook |
-| "operator reset X" | reject-reset.md cookbook |
-| "operator sync" / "operator sync all" | sync-worktrees.md cookbook |
-| "operator status" | Show plan.md + worktree status |
+**Log format:**
+```
+2024-01-15T10:30:45 [INFO] accept_task: Starting acceptance for task fix-logging
+2024-01-15T10:30:46 [INFO] accept_task: Rebase successful, 3 commits
+2024-01-15T10:30:47 [ERROR] accept_task: Tests failed - see test.log
+```
+
+**Files to create:**
+- `.claude/skills/worktree-operator/tools/logging_config.py`
+
+**Files to modify:**
+- All tools/*.py files
+
+**Acceptance Criteria:**
+- [ ] All operations logged with context
+- [ ] Log file rotates at 10MB
+- [ ] Error logs include stack traces
+- [ ] `operator logs` command works
+- [ ] No more bare print() statements
 
 ---
 
-### 5. create-operator-cookbooks
-- Status: COMPLETED
-- Dependencies: create-operator-skill-definition
-- Description: Create cookbook files for each operator action
+### 8. add-dependency-enforcement
+- Status: PENDING
+- Priority: MEDIUM
+- Dependencies: None
+- Description: Enforce task dependencies from plan.md
+
+**Problem:**
+- plan.md documents dependencies but not enforced
+- Can spawn tasks in wrong order
+- Manual tracking required
 
 **Deliverables:**
-- `worktree-operator/cookbook/init-workspace.md`
-  - Steps to clone repo, setup workspace structure
-  - Create plan.md, review-notes.md
+- Parse dependencies from plan.md task entries
+- `create_task()` warns if dependencies not COMPLETED
+- `spawn_subagent()` blocks if dependencies not met
+- Add `operator unblocked` to show spawnable tasks
+- Add `--force` flag to override dependency check
 
-- `worktree-operator/cookbook/create-plan.md`
-  - Analyze codebase
-  - Identify tasks
-  - Write plan.md using template
+**plan.md dependency format:**
+```markdown
+### 3. implement-auth
+- Status: PENDING
+- Dependencies: setup-database, create-user-model
+```
 
-- `worktree-operator/cookbook/create-task.md`
-  - Create task folder
-  - Create worktree with sub-branch
-  - Write spec.md using template
+**Files to create:**
+- `.claude/skills/worktree-operator/tools/plan_parser.py`
 
-- `worktree-operator/cookbook/spawn-subagent.md`
-  - Determine headless vs interactive
-  - Build claude command with context
-  - Execute spawn
+**Files to modify:**
+- `.claude/skills/worktree-operator/tools/task.py`
+- `.claude/skills/worktree-operator/SKILL.md`
 
-- `worktree-operator/cookbook/review-task.md`
-  - Read results.md
-  - View git diff
-  - Analyze quality
-  - Present decision options
-
-- `worktree-operator/cookbook/accept-task.md`
-  - Rebase sub-branch
-  - Run tests
-  - Merge --no-ff
-  - Cleanup worktree + branch
-  - Update plan.md
-  - Sync remaining worktrees
-
-- `worktree-operator/cookbook/reject-iterate.md`
-  - Write feedback.md
-  - Log in review-notes.md
-  - Re-spawn sub-agent
-
-- `worktree-operator/cookbook/reject-reset.md`
-  - Reset worktree
-  - Optionally revise spec.md
-  - Re-spawn sub-agent
-
-- `worktree-operator/cookbook/sync-worktrees.md`
-  - Find all active worktrees
-  - Rebase each onto main feature
+**Acceptance Criteria:**
+- [ ] Dependencies parsed from plan.md
+- [ ] Spawn blocked for tasks with unmet dependencies
+- [ ] `operator unblocked` lists ready tasks
+- [ ] `--force` overrides dependency check
+- [ ] Clear error shows which dependencies missing
 
 ---
 
-### 6. create-operator-prompts
-- Status: COMPLETED
-- Dependencies: create-common-templates
-- Description: Create prompt templates for operator
+### 9. add-conflict-resolution-guide
+- Status: PENDING
+- Priority: MEDIUM
+- Dependencies: None
+- Description: Improve guidance when rebase conflicts occur
+
+**Problem:**
+- Conflicts detected but no resolution help
+- Operator must manually resolve
+- No context about conflict files
 
 **Deliverables:**
-- `worktree-operator/prompts/context_handoff.md`
-  - Template for context passed to sub-agents
-  - Includes: task spec, relevant codebase context, iteration feedback
+- Show conflicted file list with conflict markers preview
+- Provide resolution options:
+  1. Keep ours (sub-agent changes)
+  2. Keep theirs (main branch changes)
+  3. Manual merge (open in editor)
+  4. Abort and reset
+- Add `operator resolve {task_name}` command
+- Document common conflict patterns
 
-- `worktree-operator/prompts/review_analysis.md`
-  - Template for analyzing sub-agent output
-  - Checklist: correctness, completeness, tests, style
+**Files to create:**
+- `.claude/skills/worktree-operator/cookbook/resolve-conflicts.md`
+- `.claude/skills/worktree-operator/tools/conflict_resolver.py`
+
+**Files to modify:**
+- `.claude/skills/worktree-operator/tools/git_ops.py`
+- `.claude/skills/worktree-operator/SKILL.md`
+
+**Acceptance Criteria:**
+- [ ] Conflict files listed with preview
+- [ ] Resolution options presented
+- [ ] Each option has clear outcome description
+- [ ] `operator resolve` command works
+- [ ] Cookbook documents resolution strategies
 
 ---
 
-### 7. create-subagent-skill-definition
-- Status: COMPLETED
-- Dependencies: setup-skill-structure
-- Description: Create SKILL.md for sub-agent behavior
+### 10. improve-error-messages
+- Status: PENDING
+- Priority: MEDIUM
+- Dependencies: None
+- Description: Add recovery hints to all error messages
+
+**Problem:**
+- Errors say what failed but not how to fix
+- User must guess recovery steps
+- No consistent error format
 
 **Deliverables:**
-- `worktree-subagent/SKILL.md`
+- Create error class with: message, hint, recovery_options
+- Update all tool functions to use new error format
+- Each error includes actionable next steps
+- Add `operator diagnose` for common issues
 
-**Behavior:**
-- Activates when Claude spawned with task context
-- Reads spec.md to understand task
-- Reads feedback.md if exists (iteration)
-- Works in worktree/
-- Commits changes
-- Writes results.md
-- Exits (headless) or signals done (interactive)
+**Error format:**
+```python
+{
+  "success": False,
+  "error": "Repository folder already exists: /path/repo",
+  "hint": "The workspace already has a repo. Choose an action below.",
+  "recovery_options": [
+    "Remove existing: rm -rf repo/",
+    "Use different workspace",
+    "Continue with existing: operator status"
+  ]
+}
+```
 
-**Modes:**
-| Mode | When |
-|------|------|
-| implement | Default - implement features |
-| test | Spec focuses on testing |
-| refactor | Spec focuses on refactoring |
-| review | Spec asks for code review |
+**Files to create:**
+- `.claude/skills/worktree-operator/tools/errors.py`
+
+**Files to modify:**
+- All tools/*.py files
+
+**Acceptance Criteria:**
+- [ ] All errors include hint and recovery_options
+- [ ] Hints are actionable (not just "try again")
+- [ ] Consistent error format across all tools
+- [ ] `operator diagnose` checks common issues
 
 ---
 
-### 8. create-subagent-cookbooks
-- Status: COMPLETED
-- Dependencies: create-subagent-skill-definition
-- Description: Create cookbook files for sub-agent modes
+### 11. add-decision-support
+- Status: PENDING
+- Priority: MEDIUM
+- Dependencies: None
+- Description: Help operator decide accept/iterate/reset
+
+**Problem:**
+- Operator must manually decide with no guidance
+- No quality metrics to inform decision
+- Inconsistent decision criteria
 
 **Deliverables:**
-- `worktree-subagent/cookbook/implement.md`
-  - Read and understand spec
-  - Plan implementation
-  - Make changes
-  - Run tests
-  - Commit with good messages
-  - Write results.md
+- Calculate quality score based on:
+  - All acceptance criteria met (from spec.md)
+  - Tests passing
+  - Code diff size reasonable
+  - No out-of-scope changes
+- Provide recommendation: ACCEPT / ITERATE / RESET
+- Show reasoning for recommendation
+- Add `operator analyze {task_name}` command
 
-- `worktree-subagent/cookbook/test.md`
-  - Understand what needs testing
-  - Write unit tests
-  - Write integration tests (if specified)
-  - Ensure coverage targets met
-  - Commit and document
+**Output format:**
+```
+Quality Assessment for 'fix-logging':
 
-- `worktree-subagent/cookbook/refactor.md`
-  - Understand refactoring goals
-  - Ensure tests exist first
-  - Make incremental changes
-  - Verify tests still pass
-  - Commit and document
+  Acceptance Criteria: 4/5 met (80%)
+  Tests: PASSING
+  Diff Size: 145 lines (reasonable)
+  Scope: IN_SCOPE
 
-- `worktree-subagent/cookbook/review.md`
-  - Analyze code for issues
-  - Check patterns and style
-  - Identify potential bugs
-  - Write review findings to results.md
+  RECOMMENDATION: ITERATE
+
+  Reasoning:
+  - Missing acceptance criterion: "Logs include request ID"
+  - Otherwise good quality, suggest adding the missing feature
+
+  Options:
+  1. ITERATE - Ask sub-agent to add request ID to logs
+  2. ACCEPT - Good enough, can add request ID later
+  3. RESET - Start over (not recommended)
+```
+
+**Files to create:**
+- `.claude/skills/worktree-operator/tools/quality_analyzer.py`
+- `.claude/skills/worktree-operator/cookbook/analyze-quality.md`
+
+**Files to modify:**
+- `.claude/skills/worktree-operator/SKILL.md`
+- `.claude/skills/worktree-operator/cookbook/review-task.md`
+
+**Acceptance Criteria:**
+- [ ] Quality score calculated from multiple factors
+- [ ] Recommendation given with reasoning
+- [ ] `operator analyze` command works
+- [ ] Integrates with review workflow
 
 ---
 
-### 9. create-subagent-prompts
-- Status: COMPLETED
-- Dependencies: create-common-templates
-- Description: Create prompt templates for sub-agent
+### 12. add-batch-operations
+- Status: PENDING
+- Priority: LOW
+- Dependencies: add-dependency-enforcement
+- Description: Support batch task creation and spawning
+
+**Problem:**
+- Must create/spawn tasks one at a time
+- Slow for large feature decompositions
+- No parallel spawn capability
 
 **Deliverables:**
-- `worktree-subagent/prompts/spec_reader.md`
-  - How to parse and understand spec.md
-  - Extracting requirements, acceptance criteria
+- `operator create-all` - Create all PENDING tasks from plan
+- `operator spawn-unblocked` - Spawn all tasks with met dependencies
+- `operator spawn-parallel N` - Spawn up to N tasks in parallel
+- Progress reporting for batch operations
 
-- `worktree-subagent/prompts/results_writer.md`
-  - How to write comprehensive results.md
-  - Sections: summary, changes, files, tests, risks, commits
+**Files to create:**
+- `.claude/skills/worktree-operator/cookbook/batch-operations.md`
+
+**Files to modify:**
+- `.claude/skills/worktree-operator/tools/task.py`
+- `.claude/skills/worktree-operator/SKILL.md`
+
+**Acceptance Criteria:**
+- [ ] `create-all` creates multiple tasks
+- [ ] `spawn-unblocked` respects dependencies
+- [ ] `spawn-parallel` limits concurrent sub-agents
+- [ ] Progress shown for batch operations
+- [ ] Errors don't stop entire batch
 
 ---
 
-### 10. integration-testing
-- Status: COMPLETED
+### 13. add-troubleshooting-docs
+- Status: PENDING
+- Priority: LOW
 - Dependencies: All above
-- Description: Test end-to-end workflow
+- Description: Document common issues and recovery procedures
 
-**Test scenarios:**
-1. Init workspace with real repo
-2. Create plan with 2-3 tasks
-3. Create task, spawn sub-agent, review
-4. Accept one task, verify merge
-5. Iterate on another task
-6. Reset a task
-7. Sync worktrees after merge
-8. Complete all tasks
+**Problem:**
+- No troubleshooting guide
+- Users must debug manually
+- Common issues not documented
+
+**Deliverables:**
+- Troubleshooting section in README.md
+- Common issues:
+  - Worktree in bad state (how to reset)
+  - Sub-agent hung (how to kill and restart)
+  - Rebase conflicts (how to resolve)
+  - Tests failing after merge (how to revert)
+  - Lock file stuck (how to clean)
+- Decision matrix: when to accept/iterate/reset
+- Recovery procedures for each error type
+
+**Files to modify:**
+- `README.md`
+
+**Files to create:**
+- `.claude/skills/worktree-operator/TROUBLESHOOTING.md`
+
+**Acceptance Criteria:**
+- [ ] All common issues documented
+- [ ] Each issue has step-by-step recovery
+- [ ] Decision matrix included
+- [ ] Examples for each scenario
 
 ---
 
-### 11. documentation-and-examples
-- Status: COMPLETED
-- Dependencies: integration-testing
-- Description: Add usage examples and troubleshooting
+### 14. add-workspace-config
+- Status: PENDING
+- Priority: LOW
+- Dependencies: None
+- Description: Add workspace configuration file
+
+**Problem:**
+- Settings hardcoded (test command, timeouts, etc.)
+- No way to customize per-project
+- Main branch name assumed
 
 **Deliverables:**
-- Update README.md with skill installation instructions
-- Add example session transcript
-- Document common issues specific to skills
+- Create `workspace.json` on init
+- Configurable settings:
+  - `test_command`: Command to run tests
+  - `test_timeout`: Max test runtime (seconds)
+  - `main_branch`: Default main branch name
+  - `commit_prefix`: Ticket format for commits
+  - `auto_push`: Whether to push after accept
+  - `heartbeat_interval`: Sub-agent heartbeat (seconds)
+  - `heartbeat_timeout`: When to warn about hung agent
+
+**Default workspace.json:**
+```json
+{
+  "test_command": "npm test",
+  "test_timeout": 300,
+  "main_branch": "main",
+  "commit_prefix": "{ticket}:",
+  "auto_push": false,
+  "heartbeat_interval": 60,
+  "heartbeat_timeout": 600
+}
+```
+
+**Files to create:**
+- `.claude/skills/worktree-common/templates/workspace.json`
+
+**Files to modify:**
+- `.claude/skills/worktree-operator/tools/workspace.py`
+- `.claude/skills/worktree-operator/cookbook/init-workspace.md`
+
+**Acceptance Criteria:**
+- [ ] workspace.json created on init
+- [ ] All tools read from config
+- [ ] Missing config uses defaults
+- [ ] `operator config` shows current settings
+- [ ] `operator config set KEY VALUE` updates settings
 
 ---
 
 ## Execution Order
 
 ```
-1. setup-skill-structure
-   │
-   ├─► 2. create-common-templates
-   │       │
-   │       ├─► 6. create-operator-prompts
-   │       │
-   │       └─► 9. create-subagent-prompts
-   │
-   ├─► 3. create-operator-tools
-   │       │
-   │       └─► 4. create-operator-skill-definition
-   │               │
-   │               └─► 5. create-operator-cookbooks
-   │
-   └─► 7. create-subagent-skill-definition
-           │
-           └─► 8. create-subagent-cookbooks
+CRITICAL (Security) - Do First
+├── 1. fix-shell-injection
+└── 2. add-input-validation
 
-All above ─► 10. integration-testing
-                    │
-                    └─► 11. documentation-and-examples
+HIGH (Reliability) - Do Second
+├── 3. add-subagent-health-check
+├── 4. add-test-verification-post-merge
+│   └── 5. add-transactional-accept
+└── 6. fix-race-conditions
+
+MEDIUM (Robustness) - Do Third
+├── 7. add-comprehensive-logging
+├── 8. add-dependency-enforcement
+├── 9. add-conflict-resolution-guide
+├── 10. improve-error-messages
+└── 11. add-decision-support
+
+LOW (Usability) - Do Last
+├── 12. add-batch-operations (depends on 8)
+├── 13. add-troubleshooting-docs (depends on all)
+└── 14. add-workspace-config
 ```
-
----
-
-## Notes
-
-### Design Decisions
-
-1. **Python tools vs bash scripts**
-   - Using Python for tools (workspace.py, task.py, git_ops.py)
-   - More robust error handling
-   - Easier to test
-   - Consistent with fork-repository-skill pattern
-
-2. **Skill activation**
-   - Operator: explicit triggers ("operator X")
-   - Sub-agent: context-based (spawned in task folder)
-
-3. **Sub-agent spawn method**
-   - Use `claude --dangerously-skip-permissions -p "..."` for headless
-   - Use forked terminal for interactive
-   - Pass context via prompt, not files (except spec.md/feedback.md)
-
-4. **State management**
-   - All state in filesystem (plan.md, review-notes.md, task folders)
-   - No database or external state
-   - Easy to inspect, debug, recover
-
-### Open Questions
-
-1. **How to handle sub-agent failures?**
-   - Sub-agent crashes mid-work
-   - Incomplete commits
-   - Proposed: Operator can always reset
-
-2. **Parallel sub-agents?**
-   - Can spawn multiple sub-agents on different tasks
-   - Each has own worktree - no conflicts
-   - Operator reviews sequentially or in parallel?
-
-3. **CI integration?**
-   - Push sub-branches for CI?
-   - Wait for CI before merge?
-   - Proposed: Optional, operator decides
 
 ---
 
 ## Success Criteria
 
-- [ ] Can init workspace from any git repo
-- [ ] Can create plan with task breakdown
-- [ ] Can create tasks with worktrees
-- [ ] Can spawn sub-agents (headless and interactive)
-- [ ] Sub-agents can implement, test, refactor, review
-- [ ] Can review sub-agent output
-- [ ] Can accept (rebase + merge + cleanup)
-- [ ] Can iterate (feedback + re-spawn)
-- [ ] Can reset (hard reset + re-spawn)
-- [ ] Remaining worktrees sync after merge
-- [ ] All state tracked in markdown files
-- [ ] Works with real-world repositories
+### Security
+- [ ] No shell injection vulnerabilities
+- [ ] All inputs validated
+- [ ] Path traversal blocked
+
+### Reliability
+- [ ] Sub-agent health monitoring works
+- [ ] Tests verified before merge
+- [ ] Failed operations rollback cleanly
+- [ ] No race conditions
+
+### Robustness
+- [ ] All operations logged
+- [ ] Dependencies enforced
+- [ ] Conflicts have resolution guidance
+- [ ] Error messages are actionable
+
+### Usability
+- [ ] Batch operations available
+- [ ] Troubleshooting documented
+- [ ] Workspace configurable
+- [ ] Decision support helps reviews
+
+---
+
+## Notes
+
+### Effort Estimates
+
+| Priority | Tasks | Estimated Hours |
+|----------|-------|-----------------|
+| CRITICAL | 1-2 | 8-10 |
+| HIGH | 3-6 | 30-35 |
+| MEDIUM | 7-11 | 35-40 |
+| LOW | 12-14 | 20-25 |
+| **Total** | **14** | **~100 hours** |
+
+### Risk Mitigation
+
+1. **Security tasks first** - Block exploitation before adding features
+2. **Test each task** - Don't skip testing even for "simple" fixes
+3. **Backward compatible** - Existing workflows should still work
+4. **Incremental rollout** - Each task is independently deployable

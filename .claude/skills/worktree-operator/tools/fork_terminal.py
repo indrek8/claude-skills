@@ -3,8 +3,39 @@
 
 import os
 import platform
+import shlex
 import subprocess
 from pathlib import Path
+
+# Import shared validation utilities
+from validation import (
+    ValidationError,
+    validate_task_name,
+    validate_ticket,
+    validate_model,
+    validate_path,
+    validate_positive_int,
+)
+
+
+def escape_for_applescript(s: str) -> str:
+    """
+    Properly escape a string for use in AppleScript.
+
+    Escapes: backslash, double quote, and converts the string
+    to be safe for embedding in AppleScript double-quoted strings.
+
+    Args:
+        s: String to escape
+
+    Returns:
+        Escaped string safe for AppleScript
+    """
+    # AppleScript uses backslash escaping within double quotes
+    # We need to escape: \ and "
+    s = s.replace('\\', '\\\\')
+    s = s.replace('"', '\\"')
+    return s
 
 
 def fork_terminal(command: str, working_dir: str = None) -> dict:
@@ -19,19 +50,31 @@ def fork_terminal(command: str, working_dir: str = None) -> dict:
         dict with success status and details
     """
     system = platform.system()
-    cwd = working_dir or os.getcwd()
+
+    try:
+        cwd = validate_path(working_dir) if working_dir else Path.cwd()
+    except ValidationError as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "platform": system
+        }
+
+    cwd_str = str(cwd)
 
     if system == "Darwin":  # macOS
-        shell_command = f"cd '{cwd}' && {command}"
-        # Escape for AppleScript
-        escaped_shell_command = shell_command.replace("\\", "\\\\").replace('"', '\\"')
+        # Use shlex.quote for the working directory in shell command
+        # The command itself is passed as-is (caller is responsible for it)
+        shell_command = f"cd {shlex.quote(cwd_str)} && {command}"
+
+        # Escape the entire shell command for AppleScript embedding
+        escaped_for_applescript = escape_for_applescript(shell_command)
+
+        applescript = f'tell application "Terminal" to do script "{escaped_for_applescript}"'
 
         try:
             result = subprocess.run(
-                [
-                    "osascript", "-e",
-                    f'tell application "Terminal" to do script "{escaped_shell_command}"'
-                ],
+                ["osascript", "-e", applescript],
                 capture_output=True,
                 text=True,
             )
@@ -41,7 +84,7 @@ def fork_terminal(command: str, working_dir: str = None) -> dict:
                 "stderr": result.stderr.strip(),
                 "return_code": result.returncode,
                 "platform": "macOS",
-                "working_dir": cwd
+                "working_dir": cwd_str
             }
         except Exception as e:
             return {
@@ -51,16 +94,20 @@ def fork_terminal(command: str, working_dir: str = None) -> dict:
             }
 
     elif system == "Windows":
-        full_command = f'cd /d "{cwd}" && {command}'
+        # Build command without shell=True
+        # Use proper quoting for the path
+        quoted_cwd = f'"{cwd_str}"'
+        full_command = f'cd /d {quoted_cwd} && {command}'
+
         try:
+            # Don't use shell=True - pass arguments as list
             subprocess.Popen(
-                ["cmd", "/c", "start", "cmd", "/k", full_command],
-                shell=True
+                ["cmd", "/c", "start", "cmd", "/k", full_command]
             )
             return {
                 "success": True,
                 "platform": "Windows",
-                "working_dir": cwd
+                "working_dir": cwd_str
             }
         except Exception as e:
             return {
@@ -70,24 +117,30 @@ def fork_terminal(command: str, working_dir: str = None) -> dict:
             }
 
     elif system == "Linux":
+        # Use shlex.quote for the working directory
+        quoted_cwd = shlex.quote(cwd_str)
+
+        # Build shell command with proper quoting
+        shell_cmd = f"cd {quoted_cwd} && {command}; exec bash"
+
         # Try common terminal emulators
         terminals = [
-            ("gnome-terminal", ["gnome-terminal", "--", "bash", "-c", f"cd '{cwd}' && {command}; exec bash"]),
-            ("konsole", ["konsole", "-e", "bash", "-c", f"cd '{cwd}' && {command}; exec bash"]),
-            ("xterm", ["xterm", "-e", f"cd '{cwd}' && {command}; exec bash"]),
+            ("gnome-terminal", ["gnome-terminal", "--", "bash", "-c", shell_cmd]),
+            ("konsole", ["konsole", "-e", "bash", "-c", shell_cmd]),
+            ("xterm", ["xterm", "-e", "bash", "-c", shell_cmd]),
         ]
 
         for term_name, term_cmd in terminals:
             try:
-                # Check if terminal exists
-                which_result = subprocess.run(["which", term_name], capture_output=True)
-                if which_result.returncode == 0:
+                # Check if terminal exists using shutil.which (safer than subprocess)
+                import shutil
+                if shutil.which(term_name):
                     subprocess.Popen(term_cmd)
                     return {
                         "success": True,
                         "platform": "Linux",
                         "terminal": term_name,
-                        "working_dir": cwd
+                        "working_dir": cwd_str
                     }
             except Exception:
                 continue
@@ -126,7 +179,21 @@ def spawn_forked_subagent(
     Returns:
         dict with spawn result
     """
-    workspace = Path(workspace_path).resolve()
+    # Validate all inputs first
+    try:
+        task_name = validate_task_name(task_name)
+        ticket = validate_ticket(ticket)
+        model = validate_model(model)
+        workspace = validate_path(workspace_path)
+        iteration = validate_positive_int(iteration, "iteration")
+    except ValidationError as e:
+        return e.to_dict() if hasattr(e, 'to_dict') else {
+            "success": False,
+            "error": str(e),
+            "hint": getattr(e, 'hint', "Check input format and try again"),
+            "validation_error": True
+        }
+
     task_folder = workspace / f"task-{task_name}"
     worktree_path = task_folder / "worktree"
 
@@ -134,20 +201,23 @@ def spawn_forked_subagent(
     if not task_folder.exists():
         return {
             "success": False,
-            "error": f"Task folder not found: {task_folder}"
+            "error": f"Task folder not found: {task_folder}",
+            "hint": "Create the task first with 'operator create task'"
         }
 
     if not worktree_path.exists():
         return {
             "success": False,
-            "error": f"Worktree not found: {worktree_path}"
+            "error": f"Worktree not found: {worktree_path}",
+            "hint": "The task folder exists but worktree is missing. Try recreating the task."
         }
 
     spec_path = task_folder / "spec.md"
     if not spec_path.exists():
         return {
             "success": False,
-            "error": f"Spec not found: {spec_path}"
+            "error": f"Spec not found: {spec_path}",
+            "hint": "Create spec.md in the task folder before spawning."
         }
 
     # Check if this is an iteration
@@ -157,7 +227,9 @@ def spawn_forked_subagent(
         content = feedback_path.read_text()
         is_iteration = "No feedback yet" not in content and len(content.strip()) > 50
 
-    # Build the prompt
+    # Build the prompt - use only validated/safe values
+    # task_name, ticket are validated to be safe alphanumeric strings
+    # Paths are resolved absolute paths
     if is_iteration:
         iteration_context = f"""
 IMPORTANT: This is iteration {iteration}. Previous work was reviewed and feedback was provided.
@@ -166,6 +238,7 @@ Build upon your previous commits, don't start over unless feedback says to."""
     else:
         iteration_context = ""
 
+    # Build prompt with validated values only
     prompt = f'''You are a sub-agent working on task '{task_name}'.
 
 WORKSPACE CONTEXT:
@@ -200,18 +273,18 @@ RESTRICTIONS:
 
 BEGIN WORK NOW.'''
 
-    # Escape single quotes for shell
-    escaped_prompt = prompt.replace("'", "'\"'\"'")
+    # Use shlex.quote for the prompt to safely embed in shell command
+    quoted_prompt = shlex.quote(prompt)
 
-    # Build claude command
+    # Build claude command with proper quoting
     model_flag = ""
     if model == "haiku":
-        model_flag = "--model haiku"
+        model_flag = "--model haiku "
     elif model == "sonnet":
-        model_flag = "--model sonnet"
+        model_flag = "--model sonnet "
     # opus is default, no flag needed
 
-    claude_command = f"claude --dangerously-skip-permissions {model_flag} -p '{escaped_prompt}'"
+    claude_command = f"claude --dangerously-skip-permissions {model_flag}-p {quoted_prompt}"
 
     # Fork the terminal
     result = fork_terminal(claude_command, str(worktree_path))
@@ -246,9 +319,21 @@ if __name__ == "__main__":
         model = sys.argv[5] if len(sys.argv) > 5 else "opus"
 
         result = spawn_forked_subagent(task_name, ticket, workspace, model)
-        print(result)
+
+        if result["success"]:
+            print(f"Success: {result.get('message', 'Sub-agent spawned')}")
+        else:
+            print(f"Error: {result['error']}")
+            if "hint" in result:
+                print(f"Hint: {result['hint']}")
+            sys.exit(1)
     else:
         # Raw command mode
         command = " ".join(sys.argv[1:])
         result = fork_terminal(command)
-        print(result)
+
+        if result["success"]:
+            print(f"Terminal forked successfully ({result['platform']})")
+        else:
+            print(f"Error: {result['error']}")
+            sys.exit(1)

@@ -12,6 +12,14 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Tuple
 
+# Import shared validation utilities
+from validation import (
+    ValidationError,
+    validate_branch_name,
+    validate_path,
+    validate_url,
+)
+
 
 def run_command(cmd: list[str], cwd: Optional[str] = None) -> Tuple[int, str, str]:
     """Run a shell command and return (returncode, stdout, stderr)."""
@@ -42,7 +50,26 @@ def init_workspace(
     Returns:
         dict with status and details
     """
-    workspace = Path(workspace_path).resolve()
+    # Validate inputs
+    try:
+        repo_url = validate_url(repo_url)
+        branch = validate_branch_name(branch)
+        workspace = validate_path(workspace_path)
+    except ValidationError as e:
+        return e.to_dict() if hasattr(e, 'to_dict') else {
+            "success": False,
+            "error": str(e),
+            "validation_error": True
+        }
+
+    # Validate repo_folder name (simple alphanumeric check)
+    if not repo_folder or not repo_folder.replace('-', '').replace('_', '').isalnum():
+        return {
+            "success": False,
+            "error": f"Invalid repo folder name: '{repo_folder}'",
+            "hint": "Use alphanumeric characters, hyphens, or underscores"
+        }
+
     repo_path = workspace / repo_folder
 
     # Validate workspace doesn't already have a repo
@@ -171,7 +198,16 @@ def workspace_status(workspace_path: str = ".") -> dict:
     Returns:
         dict with workspace status details
     """
-    workspace = Path(workspace_path).resolve()
+    # Validate inputs
+    try:
+        workspace = validate_path(workspace_path)
+    except ValidationError as e:
+        return e.to_dict() if hasattr(e, 'to_dict') else {
+            "success": False,
+            "error": str(e),
+            "validation_error": True
+        }
+
     repo_path = workspace / "repo"
 
     status = {
@@ -269,7 +305,16 @@ def cleanup_workspace(workspace_path: str = ".", remove_repo: bool = False) -> d
     Returns:
         dict with cleanup results
     """
-    workspace = Path(workspace_path).resolve()
+    # Validate inputs
+    try:
+        workspace = validate_path(workspace_path)
+    except ValidationError as e:
+        return e.to_dict() if hasattr(e, 'to_dict') else {
+            "success": False,
+            "error": str(e),
+            "validation_error": True
+        }
+
     repo_path = workspace / "repo"
 
     results = {

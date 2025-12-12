@@ -12,6 +12,15 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Tuple
 
+# Import shared validation utilities
+from validation import (
+    ValidationError,
+    validate_task_name,
+    validate_ticket,
+    validate_branch_name,
+    validate_path,
+)
+
 
 def run_command(cmd: list[str], cwd: Optional[str] = None) -> Tuple[int, str, str]:
     """Run a shell command and return (returncode, stdout, stderr)."""
@@ -44,7 +53,19 @@ def create_task(
     Returns:
         dict with creation results
     """
-    workspace = Path(workspace_path).resolve()
+    # Validate inputs
+    try:
+        ticket = validate_ticket(ticket)
+        task_name = validate_task_name(task_name)
+        main_branch = validate_branch_name(main_branch)
+        workspace = validate_path(workspace_path)
+    except ValidationError as e:
+        return e.to_dict() if hasattr(e, 'to_dict') else {
+            "success": False,
+            "error": str(e),
+            "validation_error": True
+        }
+
     repo_path = workspace / "repo"
     task_dir = workspace / f"task-{task_name}"
     worktree_path = task_dir / "worktree"
@@ -169,7 +190,18 @@ def sync_task(
     Returns:
         dict with sync results
     """
-    workspace = Path(workspace_path).resolve()
+    # Validate inputs
+    try:
+        task_name = validate_task_name(task_name)
+        main_branch = validate_branch_name(main_branch)
+        workspace = validate_path(workspace_path)
+    except ValidationError as e:
+        return e.to_dict() if hasattr(e, 'to_dict') else {
+            "success": False,
+            "error": str(e),
+            "validation_error": True
+        }
+
     task_dir = workspace / f"task-{task_name}"
     worktree_path = task_dir / "worktree"
 
@@ -232,7 +264,18 @@ def reset_task(
     Returns:
         dict with reset results
     """
-    workspace = Path(workspace_path).resolve()
+    # Validate inputs
+    try:
+        task_name = validate_task_name(task_name)
+        main_branch = validate_branch_name(main_branch)
+        workspace = validate_path(workspace_path)
+    except ValidationError as e:
+        return e.to_dict() if hasattr(e, 'to_dict') else {
+            "success": False,
+            "error": str(e),
+            "validation_error": True
+        }
+
     task_dir = workspace / f"task-{task_name}"
     worktree_path = task_dir / "worktree"
 
@@ -290,7 +333,19 @@ def accept_task(
     Returns:
         dict with acceptance results
     """
-    workspace = Path(workspace_path).resolve()
+    # Validate inputs
+    try:
+        ticket = validate_ticket(ticket)
+        task_name = validate_task_name(task_name)
+        main_branch = validate_branch_name(main_branch)
+        workspace = validate_path(workspace_path)
+    except ValidationError as e:
+        return e.to_dict() if hasattr(e, 'to_dict') else {
+            "success": False,
+            "error": str(e),
+            "validation_error": True
+        }
+
     repo_path = workspace / "repo"
     task_dir = workspace / f"task-{task_name}"
     worktree_path = task_dir / "worktree"
@@ -422,7 +477,17 @@ def task_status(task_name: str, workspace_path: str = ".") -> dict:
     Returns:
         dict with task status details
     """
-    workspace = Path(workspace_path).resolve()
+    # Validate inputs
+    try:
+        task_name = validate_task_name(task_name)
+        workspace = validate_path(workspace_path)
+    except ValidationError as e:
+        return e.to_dict() if hasattr(e, 'to_dict') else {
+            "success": False,
+            "error": str(e),
+            "validation_error": True
+        }
+
     task_dir = workspace / f"task-{task_name}"
     worktree_path = task_dir / "worktree"
 
@@ -500,8 +565,20 @@ def list_tasks(workspace_path: str = ".") -> list:
     Returns:
         list of task status dicts
     """
-    workspace = Path(workspace_path).resolve()
+    # Validate inputs
+    try:
+        workspace = validate_path(workspace_path)
+    except ValidationError as e:
+        return [{
+            "success": False,
+            "error": str(e),
+            "validation_error": True
+        }]
+
     tasks = []
+
+    if not workspace.exists():
+        return tasks
 
     for item in sorted(workspace.iterdir()):
         if item.is_dir() and item.name.startswith("task-"):
