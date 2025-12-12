@@ -36,6 +36,9 @@ This skill activates when the user's request matches these patterns:
 | "operator sync" | sync-worktrees.md | Rebase all active worktrees |
 | "operator sync all" | sync-worktrees.md | Same as above |
 | "operator status" | (inline) | Show plan.md + worktree status |
+| "operator status {name}" | (inline) | Check sub-agent health for specific task |
+| "operator health {name}" | (inline) | Same as above |
+| "operator health" | (inline) | Check health of all running sub-agents |
 
 ## Variables
 
@@ -83,6 +86,15 @@ Python tools available in `tools/`:
 ### fork_terminal.py
 - `fork_terminal(command, working_dir)` - Open new terminal and run command
 - `spawn_forked_subagent(task_name, ticket, workspace_path, model, iteration)` - Spawn sub-agent in forked terminal
+
+### health_check.py
+- `mark_started(task_name, workspace_path)` - Mark sub-agent as starting
+- `mark_running(task_name, progress, workspace_path)` - Update heartbeat with progress
+- `mark_completed(task_name, workspace_path)` - Mark sub-agent as completed
+- `mark_failed(task_name, error, workspace_path)` - Mark sub-agent as failed
+- `check_health(task_name, workspace_path, timeout)` - Check if sub-agent is healthy
+- `read_status(task_name, workspace_path)` - Get full status of sub-agent
+- `list_all_status(workspace_path)` - List status of all tasks
 
 ### workspace.py
 - `init_workspace(repo_url, branch, workspace_path)` - Initialize workspace

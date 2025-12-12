@@ -17,6 +17,9 @@ from validation import (
     validate_positive_int,
 )
 
+# Import health check utilities
+from health_check import mark_started, mark_running
+
 
 def escape_for_applescript(s: str) -> str:
     """
@@ -286,16 +289,23 @@ BEGIN WORK NOW.'''
 
     claude_command = f"claude --dangerously-skip-permissions {model_flag}-p {quoted_prompt}"
 
+    # Mark sub-agent as starting
+    mark_started(task_name, str(workspace))
+
     # Fork the terminal
     result = fork_terminal(claude_command, str(worktree_path))
 
     if result["success"]:
+        # Update status to running
+        mark_running(task_name, "Sub-agent starting in new terminal", str(workspace))
+
         result["task_name"] = task_name
         result["ticket"] = ticket
         result["model"] = model
         result["iteration"] = iteration
         result["worktree"] = str(worktree_path)
         result["message"] = f"Sub-agent forked for task '{task_name}' in new terminal"
+        result["health_check"] = "Status file created. Use 'operator status {task_name}' to check progress."
 
     return result
 
