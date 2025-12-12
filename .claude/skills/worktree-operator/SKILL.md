@@ -29,6 +29,7 @@ This skill activates when the user's request matches these patterns:
 | "operator fork {name}" | spawn-subagent.md | Launch sub-agent in forked terminal (no token cost) |
 | "operator spawn fork {name}" | spawn-subagent.md | Same as above |
 | "operator review {name}" | review-task.md | Review sub-agent output |
+| "operator analyze {name}" | analyze-quality.md | Analyze task quality and get recommendation |
 | "operator accept {name}" | accept-task.md | Rebase, merge, cleanup |
 | "operator iterate {name}" | reject-iterate.md | Write feedback, re-spawn |
 | "operator feedback {name}" | reject-iterate.md | Same as above |
@@ -147,6 +148,14 @@ Python tools available in `tools/`:
 - `get_unblocked_tasks(workspace_path)` - Return tasks ready to spawn (all dependencies met)
 - `check_dependencies(task_name, workspace_path)` - Check if task dependencies are met
 - `format_unblocked_report(workspace_path)` - Format human-readable dependency status report
+
+### quality_analyzer.py
+- `analyze_task(task_name, workspace_path)` - Analyze task quality and get recommendation
+- `parse_acceptance_criteria(spec_path)` - Extract acceptance criteria from spec.md
+- `check_test_status(worktree_path, workspace_path)` - Check test status
+- `analyze_diff_size(repo_path, main_branch, sub_branch)` - Analyze diff size
+- `check_scope(task_name, workspace_path, main_branch, ticket)` - Check for out-of-scope changes
+- `format_analysis_report(analysis)` - Format analysis as readable report
 
 ## File Structure
 

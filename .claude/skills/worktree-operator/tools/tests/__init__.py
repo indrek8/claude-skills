@@ -1,1 +1,1 @@
-# Tests package
+# Tests for worktree operator tools

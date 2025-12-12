@@ -15,7 +15,35 @@ Review sub-agent output and decide: accept, iterate, or reset.
 
 ## Steps
 
-### 1. Gather Review Information
+### 1. Run Automated Quality Analysis (Recommended)
+
+Start with automated analysis to get a recommendation:
+
+```python
+from tools.quality_analyzer import analyze_task, format_analysis_report
+
+# Get automated quality assessment
+analysis = analyze_task("fix-logging", ".")
+print(format_analysis_report(analysis))
+```
+
+Or via command line:
+```bash
+cd .claude/skills/worktree-operator/tools
+python quality_analyzer.py analyze fix-logging --workspace /path/to/workspace
+```
+
+This provides:
+- Quality score (0-100)
+- Acceptance criteria check
+- Test status
+- Diff size assessment
+- Scope verification
+- Recommendation (ACCEPT/ITERATE/RESET)
+
+See analyze-quality.md for detailed guidance on interpreting results.
+
+### 2. Gather Additional Review Information
 
 ```bash
 TASK="fix-logging"
@@ -37,9 +65,9 @@ git diff --stat ${MAIN_BRANCH}..${SUB_BRANCH}
 git diff ${MAIN_BRANCH}..${SUB_BRANCH}
 ```
 
-### 2. Assess Quality
+### 3. Manual Quality Assessment (Optional)
 
-Review against these criteria:
+If the automated analysis needs human judgment, review against these criteria:
 
 #### Correctness
 - Does the code do what the spec asked?
@@ -61,7 +89,7 @@ Review against these criteria:
 - Are new tests adequate?
 - Is coverage acceptable?
 
-### 3. Check Test Results
+### 4. Check Test Results
 
 ```bash
 cd task-${TASK}/worktree
@@ -76,7 +104,7 @@ go test ./...
 cargo test
 ```
 
-### 4. Present Review Summary
+### 5. Present Review Summary
 
 ```
 ╔══════════════════════════════════════════════════════════════╗
@@ -123,7 +151,7 @@ cargo test
 What would you like to do? [1/2/3]:
 ```
 
-### 5. Process Decision
+### 6. Process Decision
 
 Based on user decision:
 
@@ -136,7 +164,7 @@ Based on user decision:
 #### Reset
 → Run reject-reset.md cookbook
 
-### 6. Log Review Decision
+### 7. Log Review Decision
 
 Add to review-notes.md:
 
@@ -168,6 +196,13 @@ Add to review-notes.md:
 ```python
 from tools.task import task_status
 from tools.git_ops import get_diff_stats, get_commits_between
+from tools.quality_analyzer import analyze_task, format_analysis_report
+
+# Run full quality analysis (recommended)
+analysis = analyze_task("fix-logging", ".")
+if analysis["success"]:
+    print(format_analysis_report(analysis))
+    print(f"\nRecommendation: {analysis['recommendation']}")
 
 # Get task info
 status = task_status("fix-logging", ".")
@@ -282,6 +317,7 @@ Consider:
 
 ## Checklist
 
+- [ ] Quality analysis run (`operator analyze {name}`)
 - [ ] results.md read
 - [ ] Diff reviewed
 - [ ] Commits examined
