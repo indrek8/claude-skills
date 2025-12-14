@@ -4,7 +4,9 @@
 Launch a sub-agent to work on a task in its dedicated worktree.
 
 ## When to Use
-- User says "operator spawn {name}" or "operator run subagent {name}"
+- User says "operator spawn {name}" or "operator spawn inline {name}"
+- User says "operator spawn forked {name}"
+- User says "operator spawn interactive {name}"
 - After task is created and spec.md is complete
 - When re-running after iteration feedback
 
@@ -15,22 +17,30 @@ Launch a sub-agent to work on a task in its dedicated worktree.
 
 ## Execution Modes
 
-### Headless Mode (Inline)
+### Inline Mode (Default)
+**Command:** `operator spawn {name}` or `operator spawn inline {name}`
+
 - Sub-agent runs autonomously **in current session**
 - Consumes tokens in operator's context
 - No interactive questions
 - Reads spec.md → works → writes results.md → exits
 - Best for: small tasks, quick fixes
 
-### Headless Mode (Forked Terminal)
+### Forked Mode
+**Command:** `operator spawn forked {name}`
+
 - Sub-agent runs autonomously **in new terminal window**
 - Does NOT consume tokens in operator's session
+- Uses `--dangerously-skip-permissions` flag
 - Operator can continue working or monitor progress
 - Best for: larger tasks, parallel work, token-heavy implementations
 
 ### Interactive Mode
-- Sub-agent can ask clarifying questions
-- Runs in separate terminal
+**Command:** `operator spawn interactive {name}`
+
+- Sub-agent runs **in new terminal window**
+- Can ask clarifying questions and interact with user
+- Does NOT use `--dangerously-skip-permissions` flag
 - Best for: complex tasks, unclear requirements
 
 ## Steps
@@ -63,9 +73,9 @@ Ask user or infer from context:
 Task '{task_name}' is ready to spawn.
 
 Execution mode:
-1. Headless Inline (small tasks, consumes session tokens)
-2. Headless Forked (larger tasks, runs in new terminal)
-3. Interactive (for complex tasks needing clarification)
+1. Inline (default - small tasks, consumes session tokens)
+2. Forked (larger tasks, runs in new terminal, headless)
+3. Interactive (complex tasks, runs in new terminal, allows questions)
 
 Which mode? [1/2/3]:
 ```
@@ -132,7 +142,7 @@ BEGIN WORK NOW.'''
 
 ### 4. Execute Spawn
 
-#### Headless Inline Mode
+#### Inline Mode (Default)
 
 Runs in current session (consumes tokens):
 
@@ -141,7 +151,7 @@ Runs in current session (consumes tokens):
 claude --dangerously-skip-permissions -p "{prompt}"
 ```
 
-#### Headless Forked Mode (Recommended for larger tasks)
+#### Forked Mode (Recommended for larger tasks)
 
 Runs in new terminal window (does NOT consume session tokens):
 
@@ -157,30 +167,32 @@ result = spawn_forked_subagent(
 )
 
 if result["success"]:
-    print(f"✓ Sub-agent forked in new terminal")
+    print(f"✓ Sub-agent spawned in forked terminal")
     print(f"  Worktree: {result['worktree']}")
 else:
-    print(f"✗ Fork failed: {result['error']}")
+    print(f"✗ Spawn failed: {result['error']}")
 ```
 
 Or via command line:
 
 ```bash
 # macOS - opens new Terminal window
-python tools/fork_terminal.py --spawn {task_name} {ticket} {workspace} {model}
+python3 tools/fork_terminal.py --spawn {task_name} {ticket} {workspace} {model}
 
 # Example
-python tools/fork_terminal.py --spawn fix-logging K-123 . opus
+python3 tools/fork_terminal.py --spawn fix-logging K-123 . opus
 ```
 
 #### Interactive Mode
 
-```bash
-# Open new terminal and run claude interactively
-# On macOS:
-osascript -e 'tell app "Terminal" to do script "cd {worktree_path} && claude --dangerously-skip-permissions"'
+Opens new terminal for interactive session (user can interact):
 
-# Then manually provide the task context
+```bash
+# Open new terminal and run claude interactively (no -p flag)
+# On macOS:
+osascript -e 'tell app "Terminal" to do script "cd {worktree_path} && claude"'
+
+# Then manually provide the task context in the new terminal
 ```
 
 ### 5. Update Status
@@ -210,13 +222,15 @@ Wait for completion, then review output.
 
 {if forked}
 Sub-agent is running in a NEW TERMINAL WINDOW.
+Uses --dangerously-skip-permissions (headless mode).
 You can continue working here or switch to monitor.
 Run "operator review {task_name}" when complete.
 {/if}
 
 {if interactive}
-Sub-agent terminal opened.
-Provide task context when ready.
+Sub-agent terminal opened for interactive session.
+You can interact with the sub-agent in the new terminal.
+Provide task context and guidance as needed.
 {/if}
 ```
 
@@ -269,7 +283,7 @@ START WORKING NOW.
 
 ## Monitoring Progress
 
-For headless mode, check progress by:
+For inline and forked modes, check progress by:
 
 ```bash
 # Check for commits
@@ -317,6 +331,14 @@ Options:
 1. Wait for current sub-agent to complete
 2. Kill existing session and spawn new one
 ```
+
+## Mode Summary
+
+| Mode | Command | Terminal | Tokens | Headless | Best For |
+|------|---------|----------|--------|----------|----------|
+| Inline | `spawn {name}` | Current | Yes | Yes | Small tasks |
+| Forked | `spawn forked {name}` | New | No | Yes | Large tasks |
+| Interactive | `spawn interactive {name}` | New | No | No | Complex tasks |
 
 ## Checklist
 

@@ -24,10 +24,10 @@ This skill activates when the user's request matches these patterns:
 | "operator plan" | create-plan.md | Analyze codebase, create plan.md |
 | "operator analyze" | create-plan.md | Same as above |
 | "operator create task {name}" | create-task.md | Create task folder + worktree |
-| "operator spawn {name}" | spawn-subagent.md | Launch sub-agent on task (inline, consumes tokens) |
-| "operator run subagent {name}" | spawn-subagent.md | Same as above |
-| "operator fork {name}" | spawn-subagent.md | Launch sub-agent in forked terminal (no token cost) |
-| "operator spawn fork {name}" | spawn-subagent.md | Same as above |
+| "operator spawn {name}" | spawn-subagent.md | Launch sub-agent inline (default, consumes tokens) |
+| "operator spawn inline {name}" | spawn-subagent.md | Same as above |
+| "operator spawn forked {name}" | spawn-subagent.md | Launch sub-agent in forked terminal (no token cost) |
+| "operator spawn interactive {name}" | spawn-subagent.md | Launch sub-agent in forked terminal (allows interaction) |
 | "operator review {name}" | review-task.md | Review sub-agent output |
 | "operator analyze {name}" | analyze-quality.md | Analyze task quality and get recommendation |
 | "operator accept {name}" | accept-task.md | Rebase, merge, cleanup |
@@ -349,9 +349,12 @@ If no `workspace.json` exists, all tools use their default values.
 2. Rebase each onto main branch
 3. Report any conflicts
 
-## Sub-Agent Spawn Command
+## Sub-Agent Spawn Commands
 
-### Headless Inline Mode (consumes session tokens)
+### Inline Mode (default, consumes session tokens)
+
+**Command:** `operator spawn {name}` or `operator spawn inline {name}`
+
 ```bash
 claude --dangerously-skip-permissions -p "You are a sub-agent working on task '{task_name}'.
 
@@ -369,7 +372,10 @@ Instructions:
 IMPORTANT: Only modify files in your worktree. Do not touch other folders."
 ```
 
-### Headless Forked Mode (runs in new terminal, no token cost)
+### Forked Mode (runs in new terminal, no token cost)
+
+**Command:** `operator spawn forked {name}`
+
 ```python
 from tools.fork_terminal import spawn_forked_subagent
 
@@ -385,14 +391,17 @@ result = spawn_forked_subagent(
 
 Or via command line:
 ```bash
-python tools/fork_terminal.py --spawn {task_name} {ticket} . opus
+python3 tools/fork_terminal.py --spawn {task_name} {ticket} . opus
 
 # To skip dependency checking:
-python tools/fork_terminal.py --spawn {task_name} {ticket} . opus --force
+python3 tools/fork_terminal.py --spawn {task_name} {ticket} . opus --force
 ```
 
-### Interactive Mode
-Spawn in new terminal without -p flag, then provide instructions.
+### Interactive Mode (runs in new terminal, allows user interaction)
+
+**Command:** `operator spawn interactive {name}`
+
+Opens a new terminal without `--dangerously-skip-permissions`, allowing the user to interact with the sub-agent directly.
 
 ## Error Handling
 

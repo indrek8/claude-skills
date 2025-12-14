@@ -20,22 +20,22 @@ This guide covers common issues, error recovery, and debugging procedures for th
 
 ```bash
 # Check all task statuses in workspace
-python tools/health_check.py list [workspace]
+python3 tools/health_check.py list [workspace]
 
 # Check specific task health
-python tools/health_check.py health <task_name> [workspace]
+python3 tools/health_check.py health <task_name> [workspace]
 
 # List all known error codes
-python tools/errors.py list
+python3 tools/errors.py list
 
 # Get diagnostic info for specific error
-python tools/errors.py diagnose <error_code>
+python3 tools/errors.py diagnose <error_code>
 
 # Check workspace lock status
-python tools/locking.py status [workspace]
+python3 tools/locking.py status [workspace]
 
 # Detect git conflicts in worktree
-python tools/conflict_resolver.py detect <worktree_path>
+python3 tools/conflict_resolver.py detect <worktree_path>
 
 # View all worktrees
 cd repo && git worktree list
@@ -48,8 +48,8 @@ cd repo && git status
 
 | Problem | Quick Fix |
 |---------|-----------|
-| Workspace locked | `python tools/locking.py status` then `unlock` if stale |
-| Rebase conflicts | `python tools/conflict_resolver.py detect <worktree>` |
+| Workspace locked | `python3 tools/locking.py status` then `unlock` if stale |
+| Rebase conflicts | `python3 tools/conflict_resolver.py detect <worktree>` |
 | Sub-agent stuck | Check terminal, or `operator reset <task>` |
 | Worktree missing | `git worktree list` then recreate task |
 | Tests failing | Run tests manually in worktree to see output |
@@ -458,7 +458,7 @@ npm test
 **Recovery Options:**
 ```bash
 # Check lock status
-python tools/locking.py status
+python3 tools/locking.py status
 
 # Wait for other operation to complete
 
@@ -466,7 +466,7 @@ python tools/locking.py status
 ps aux | grep <pid>
 
 # Force unlock if stale
-python tools/locking.py unlock
+python3 tools/locking.py unlock
 ```
 
 ---
@@ -482,12 +482,12 @@ python tools/locking.py unlock
 **Recovery Options:**
 ```bash
 # Check what operation is running
-python tools/locking.py status
+python3 tools/locking.py status
 
 # Wait and retry
 
 # Force unlock if stuck
-python tools/locking.py unlock
+python3 tools/locking.py unlock
 ```
 
 ---
@@ -509,7 +509,7 @@ python tools/locking.py unlock
 ```bash
 # Check sub-agent status
 operator health <task_name>
-python tools/health_check.py health <task_name>
+python3 tools/health_check.py health <task_name>
 
 # Check the terminal window running the sub-agent
 
@@ -608,7 +608,7 @@ operator spawn <task>
 
 1. Check sub-agent health:
    ```bash
-   python tools/health_check.py health <task_name>
+   python3 tools/health_check.py health <task_name>
    ```
 
 2. Look at the sub-agent terminal window for:
@@ -641,7 +641,7 @@ operator spawn <task>
 
 1. Detect conflicts:
    ```bash
-   python tools/conflict_resolver.py detect task-<name>/worktree
+   python3 tools/conflict_resolver.py detect task-<name>/worktree
    ```
 
 2. View conflicted files:
@@ -682,17 +682,17 @@ operator spawn <task>
 2. Choose resolution strategy:
    ```bash
    # Keep your changes
-   python tools/conflict_resolver.py resolve-all <worktree_path> ours
+   python3 tools/conflict_resolver.py resolve-all <worktree_path> ours
 
    # Keep incoming changes
-   python tools/conflict_resolver.py resolve-all <worktree_path> theirs
+   python3 tools/conflict_resolver.py resolve-all <worktree_path> theirs
 
    # Or resolve manually
    ```
 
 3. Continue operation:
    ```bash
-   python tools/conflict_resolver.py continue <worktree_path>
+   python3 tools/conflict_resolver.py continue <worktree_path>
    ```
 
 ---
@@ -772,7 +772,7 @@ operator spawn <task>
 
 1. Check lock status:
    ```bash
-   python tools/locking.py status
+   python3 tools/locking.py status
    ```
 
 2. Check if holding process is running:
@@ -783,7 +783,7 @@ operator spawn <task>
 
 3. If process not running, force unlock:
    ```bash
-   python tools/locking.py unlock
+   python3 tools/locking.py unlock
    # Type 'yes' to confirm
    ```
 
@@ -869,7 +869,7 @@ operator spawn <task>
 
 2. **View conflict details:**
    ```bash
-   python tools/conflict_resolver.py detect .
+   python3 tools/conflict_resolver.py detect .
    ```
 
 3. **Open conflicted files and look for markers:**
@@ -944,7 +944,7 @@ operator spawn <task>
 
 1. **Check lock status:**
    ```bash
-   python tools/locking.py status
+   python3 tools/locking.py status
    ```
 
 2. **Verify holding process:**
@@ -955,13 +955,13 @@ operator spawn <task>
 
 3. **Force unlock:**
    ```bash
-   python tools/locking.py unlock
+   python3 tools/locking.py unlock
    # Type 'yes' to confirm
    ```
 
 4. **Verify unlocked:**
    ```bash
-   python tools/locking.py status
+   python3 tools/locking.py status
    # Should show "locked": false
    ```
 
@@ -971,7 +971,7 @@ operator spawn <task>
 
 1. **Check task status:**
    ```bash
-   python tools/health_check.py status <task_name>
+   python3 tools/health_check.py status <task_name>
    ```
 
 2. **Reset the task:**
@@ -997,7 +997,7 @@ operator spawn <task>
 
 1. **Get status:**
    ```bash
-   python tools/health_check.py health <task_name>
+   python3 tools/health_check.py health <task_name>
    ```
 
 2. **Check output for:**
@@ -1029,7 +1029,7 @@ git merge --abort
 
 #### Abort Any Git Operation:
 ```bash
-python tools/conflict_resolver.py abort <worktree_path>
+python3 tools/conflict_resolver.py abort <worktree_path>
 ```
 
 #### Restart a Task from Scratch:
@@ -1074,7 +1074,7 @@ git log --oneline --graph --all | head -30
 The tools use Python logging. Check stderr output for detailed logs:
 
 ```bash
-python tools/health_check.py status <task> 2>&1 | less
+python3 tools/health_check.py status <task> 2>&1 | less
 ```
 
 ### Manual Recovery
@@ -1127,13 +1127,13 @@ When troubleshooting, always verify commands work:
 
 ```bash
 # Test error diagnosis
-python tools/errors.py diagnose REBASE_CONFLICT
+python3 tools/errors.py diagnose REBASE_CONFLICT
 
 # Test health check
-python tools/health_check.py list
+python3 tools/health_check.py list
 
 # Test conflict detection
-python tools/conflict_resolver.py detect <worktree_path>
+python3 tools/conflict_resolver.py detect <worktree_path>
 ```
 
 ---
@@ -1142,5 +1142,5 @@ python tools/conflict_resolver.py detect <worktree_path>
 
 - **Documentation:** See [README.md](README.md) for workflow documentation
 - **Issue Tracker:** Report issues at the project repository
-- **Error Codes:** Run `python tools/errors.py list` for all error codes
-- **Diagnostics:** Run `python tools/errors.py diagnose <code>` for specific errors
+- **Error Codes:** Run `python3 tools/errors.py list` for all error codes
+- **Diagnostics:** Run `python3 tools/errors.py diagnose <code>` for specific errors

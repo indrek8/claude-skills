@@ -449,10 +449,11 @@ The **worker**. Implements specific tasks in isolated worktrees.
 
 ### Execution Modes
 
-| Mode | When to Use | Sub-Agent Behavior |
-|------|-------------|-------------------|
-| **Headless** | Clear spec, well-defined task | Read spec → work → write results → exit |
-| **Interactive** | Complex/unclear task | Can ask clarifying questions during work |
+| Mode | Command | When to Use | Sub-Agent Behavior |
+|------|---------|-------------|-------------------|
+| **Inline** | `operator spawn {name}` | Small tasks, quick fixes | Runs in current session (consumes tokens) |
+| **Forked** | `operator spawn forked {name}` | Larger tasks, parallel work | Runs in new terminal (headless, no token cost) |
+| **Interactive** | `operator spawn interactive {name}` | Complex/unclear tasks | Runs in new terminal (can ask questions) |
 
 ---
 
@@ -534,7 +535,7 @@ cd repo && git worktree list
 
 Operator spawns sub-agent to work on task:
 
-**Headless mode (clear spec):**
+**Inline mode (default - small tasks):**
 ```bash
 claude --dangerously-skip-permissions \
     -p "You are a sub-agent. Your task folder is task-fix-logging/.
@@ -542,11 +543,17 @@ claude --dangerously-skip-permissions \
         commit your changes, write results.md, then exit."
 ```
 
-**Interactive mode (complex task):**
+**Forked mode (larger tasks - runs in new terminal):**
 ```bash
-# Spawn in new terminal, sub-agent can ask questions
-claude --dangerously-skip-permissions
-# Then instruct: "Read task-fix-logging/spec.md and implement the task"
+# Opens new terminal window with headless sub-agent
+python3 tools/fork_terminal.py --spawn fix-logging K-123 . opus
+```
+
+**Interactive mode (complex tasks - allows questions):**
+```bash
+# Opens new terminal, sub-agent can ask questions
+osascript -e 'tell app "Terminal" to do script "cd task-fix-logging/worktree && claude"'
+# Then instruct: "Read ../spec.md and implement the task"
 ```
 
 ---
@@ -1519,7 +1526,7 @@ done
 | Merge conflicts during accept | Resolve in worktree first: `git rebase feature/K-123_main`, then retry accept. |
 | Sub-agent exits without results.md | Check if sub-agent crashed. Look at last commits. May need to manually write results or reset. |
 | Plan.md out of sync | Run `operator status` to get current state. Manually update plan.md if needed. |
-| Headless sub-agent hangs | Check for interactive prompts (npm install confirmations, etc.). Use `--yes` flags. |
+| Sub-agent hangs (inline/forked mode) | Check for interactive prompts (npm install confirmations, etc.). Use `--yes` flags. |
 | Python tools not found | Ensure Python 3 is installed. Tools are in `.claude/skills/worktree-operator/tools/`. |
 
 ### Debugging Tips
@@ -1571,7 +1578,7 @@ touch plan.md review-notes.md
 ./task-create.sh ./myworkspace K-123 fix-logging feature/K-123_feature_name
 ```
 
-### Spawn Sub-Agent (Headless)
+### Spawn Sub-Agent (Inline Mode)
 ```bash
 claude --dangerously-skip-permissions \
     -p "You are a sub-agent. Task folder: task-fix-logging/.
@@ -1631,17 +1638,17 @@ See the dedicated **[Troubleshooting Guide](TROUBLESHOOTING.md)**.
 
 ```bash
 # List all error codes
-python tools/errors.py list
+python3 tools/errors.py list
 
 # Diagnose specific error
-python tools/errors.py diagnose <error_code>
+python3 tools/errors.py diagnose <error_code>
 
 # Check sub-agent health
-python tools/health_check.py health <task_name>
+python3 tools/health_check.py health <task_name>
 
 # Check workspace lock status
-python tools/locking.py status
+python3 tools/locking.py status
 
 # Detect conflicts
-python tools/conflict_resolver.py detect <worktree_path>
+python3 tools/conflict_resolver.py detect <worktree_path>
 ```
