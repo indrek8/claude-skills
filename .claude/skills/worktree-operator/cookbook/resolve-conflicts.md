@@ -273,31 +273,13 @@ Use this guide to choose a resolution strategy:
 
 ## Error Handling
 
-### "No rebase in progress"
-The rebase may have already completed or been aborted.
-```bash
-git status  # Check current state
-```
+> See SKILL.md "Error Handling" section for complete error reference and recovery procedures.
 
-### "Cannot continue: files still have conflicts"
-Not all files were resolved. Check remaining conflicts:
-```python
-conflicts = detect_conflicts(worktree_path)
-for f in conflicts["files"]:
-    print(f"  Still conflicted: {f['path']}")
-```
-
-### "More conflicts in subsequent commits"
-Rebase processes commits one by one. After resolving one commit's conflicts,
-there may be more in later commits. Continue the cycle:
-```python
-while True:
-    result = continue_rebase(worktree_path)
-    if not result.get("more_conflicts"):
-        break
-    # Resolve new conflicts
-    resolve_all(worktree_path, "ours")
-```
+| Error | Quick Fix |
+|-------|-----------|
+| "No rebase in progress" | Check `git status`, may be completed or aborted |
+| "Files still have conflicts" | Use `detect_conflicts()` to find remaining files |
+| "More conflicts in subsequent commits" | Continue resolving: `continue_rebase()` returns `more_conflicts` flag |
 
 ## Best Practices
 

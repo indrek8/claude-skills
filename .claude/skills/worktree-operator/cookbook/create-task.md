@@ -252,35 +252,13 @@ See existing pattern in src/services/auth.ts which already uses structured loggi
 
 ## Error Handling
 
-### Task folder already exists
-```
-Task folder 'task-{name}' already exists.
+> See SKILL.md "Error Handling" section for complete error reference and recovery procedures.
 
-Options:
-1. Choose a different task name
-2. Remove existing folder: rm -rf task-{name}/
-3. Continue with existing folder (overwrites spec.md)
-```
-
-### Branch already exists
-```
-Branch 'feature/{ticket}/{name}' already exists.
-
-Options:
-1. Use existing branch (attach worktree)
-2. Delete and recreate: git branch -D feature/{ticket}/{name}
-3. Choose different task name
-```
-
-### Main branch doesn't exist
-```
-Branch '{main_branch}' not found.
-
-Options:
-1. Check branch name spelling
-2. Fetch from remote: git fetch origin
-3. Use different base branch
-```
+| Error | Quick Fix |
+|-------|-----------|
+| Task folder exists | Choose different name or `rm -rf task-{name}/` |
+| Branch exists | Use existing, delete with `git branch -D`, or rename |
+| Main branch missing | Check spelling, `git fetch origin` |
 
 ## Checklist
 

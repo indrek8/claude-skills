@@ -151,41 +151,13 @@ else:
 
 ## Error Handling
 
-### Repository clone fails
-```
-✗ Failed to clone repository
-  Error: {git error message}
+> See SKILL.md "Error Handling" section for complete error reference and recovery procedures.
 
-  Possible causes:
-  - Invalid repository URL
-  - No access to repository
-  - Network issues
-
-  Try:
-  - Verify the repository URL
-  - Check SSH keys / credentials
-  - Check network connection
-```
-
-### Branch doesn't exist
-```
-Branch '{branch}' not found on remote.
-
-Options:
-1. Create new branch from default: git switch -c {branch}
-2. Use different branch name
-3. Check spelling of branch name
-```
-
-### Workspace already has repo
-```
-Repository folder already exists at {repo_path}
-
-Options:
-1. Use different workspace directory
-2. Remove existing repo: rm -rf repo/
-3. Continue with existing repo (skip clone)
-```
+| Error | Quick Fix |
+|-------|-----------|
+| Clone fails | Check URL, SSH keys, network |
+| Branch not found | Verify spelling, `git fetch origin`, or create new |
+| Repo exists | Remove `rm -rf repo/` or continue with existing |
 
 ## Checklist
 

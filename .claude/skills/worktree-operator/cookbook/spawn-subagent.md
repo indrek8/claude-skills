@@ -299,38 +299,14 @@ git status
 
 ## Error Handling
 
-### Spec incomplete
-```
-Spec.md appears incomplete (found template placeholders).
+> See SKILL.md "Error Handling" section for complete error reference and recovery procedures.
 
-Please complete the specification before spawning:
-  - Fill in all {PLACEHOLDER} values
-  - Remove template instructions
-  - Ensure acceptance criteria are specific
-```
-
-### Worktree missing
-```
-Worktree not found for task '{name}'.
-
-The task folder exists but worktree is missing.
-Options:
-1. Recreate task: operator create task {name}
-2. Check git worktree list for issues
-```
-
-### Previous sub-agent still running
-```
-A sub-agent may still be running on this task.
-
-Check:
-- Is there an active Claude session for this task?
-- Are there uncommitted changes in the worktree?
-
-Options:
-1. Wait for current sub-agent to complete
-2. Kill existing session and spawn new one
-```
+| Error | Quick Fix |
+|-------|-----------|
+| Spec incomplete | Fill all placeholders, remove template instructions |
+| Worktree missing | `operator create task {name}` or check `git worktree list` |
+| Sub-agent running | Wait for completion or kill existing session |
+| Dependencies not met | Complete dependencies first or use `--force` |
 
 ## Mode Summary
 

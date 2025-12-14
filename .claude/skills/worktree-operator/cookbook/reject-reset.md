@@ -291,29 +291,12 @@ Resetting with more detailed guidance.
 
 ## Error Handling
 
-### Uncommitted changes
-```
-Worktree has uncommitted changes.
+> See SKILL.md "Error Handling" section for complete error reference and recovery procedures.
 
-Options:
-1. Force reset (discard changes): git reset --hard && git clean -fd
-2. Commit first, then reset
-3. Stash changes for review: git stash
-
-Proceed with force reset? [y/N]:
-```
-
-### Backup branch exists
-```
-Backup branch 'backup/failed-attempt-{N}' already exists.
-
-Options:
-1. Delete and recreate
-2. Use different backup name
-3. Skip backup
-
-Choose option [1/2/3]:
-```
+| Error | Quick Fix |
+|-------|-----------|
+| Uncommitted changes | `git reset --hard && git clean -fd` or stash first |
+| Backup branch exists | Delete and recreate, or use different name |
 
 ## Checklist
 

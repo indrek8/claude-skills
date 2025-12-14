@@ -472,6 +472,38 @@ The `tools/errors.py` module provides:
 - `diagnose(error_code)`: Get diagnostic info for an error
 - `list_known_errors()`: List all known error codes
 
+### Quick Troubleshooting
+
+> **For detailed recovery procedures:** Read `reference/troubleshooting.md`
+
+**Diagnostic Commands:**
+```bash
+python3 tools/health_check.py list [workspace]     # All task statuses
+python3 tools/health_check.py health <task>        # Specific task health
+python3 tools/locking.py status                    # Lock status
+python3 tools/conflict_resolver.py detect <worktree>  # Detect conflicts
+cd repo && git worktree list                       # View all worktrees
+```
+
+**Recovery Procedures:**
+
+| Problem | Solution |
+|---------|----------|
+| **Rebase conflicts** | `operator resolve {name}` or manually: `cd worktree && git status`, resolve files, `git add . && git rebase --continue` |
+| **Workspace locked** | `python3 tools/locking.py status`, if stale: `python3 tools/locking.py unlock` |
+| **Sub-agent stuck** | `operator health {name}`, check terminal, or `operator reset {name}` |
+| **Worktree missing** | `git worktree list`, then `operator reset {name}` or recreate task |
+| **Dirty worktree** | `cd worktree && git stash` or `git checkout -- . && git clean -fd` |
+| **Failed accept** | `cd worktree && git rebase --abort` (or `git merge --abort`), retry |
+| **Orphaned worktree** | `git worktree remove <path> --force && git worktree prune` |
+
+**Abort Operations:**
+```bash
+git rebase --abort                    # Abort rebase
+git merge --abort                     # Abort merge
+python3 tools/conflict_resolver.py abort <worktree>  # Abort any
+```
+
 ## Dependency Enforcement
 
 Tasks in plan.md can specify dependencies:
@@ -501,3 +533,17 @@ if not result["can_spawn"]:
 unblocked = get_unblocked_tasks(workspace_path)
 print(f"Ready to spawn: {unblocked['unblocked']}")
 ```
+
+## Updating plan.md
+
+After each operation, update the task status in plan.md:
+
+| Operation | Status Change |
+|-----------|---------------|
+| create task | Add task with `PENDING` |
+| spawn | `PENDING` → `IN_PROGRESS` |
+| iterate | `IN_PROGRESS` → `ITERATING` |
+| accept | `IN_PROGRESS` → `COMPLETED` |
+| reset | Any → `PENDING` |
+
+Status values: `PENDING`, `IN_PROGRESS`, `ITERATING`, `COMPLETED`, `BLOCKED`

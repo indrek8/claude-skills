@@ -201,25 +201,14 @@ All batch operations return a consistent result format:
 
 ## Error Handling
 
-### Plan Parse Errors
-```
-Error: Failed to parse plan.md
-Hint: Ensure plan.md exists and is properly formatted
-```
-Solution: Check that plan.md follows the expected format with ### task headers and - Status: lines.
+> See SKILL.md "Error Handling" section for complete error reference and recovery procedures.
 
-### No Pending Tasks
-```
-Message: No pending tasks found in plan.md
-```
-This is not an error - all tasks may already be completed or in progress.
-
-### Tasks Without Folders
-Tasks in plan.md without corresponding task folders are skipped with a message.
-Create them first with `create-all` or `operator create task {name}`.
-
-### Spawn Failures
-Individual spawn failures don't stop the batch. The operation continues and reports failures at the end.
+| Error | Quick Fix |
+|-------|-----------|
+| Plan parse errors | Check plan.md format (### headers, `- Status:` lines) |
+| No pending tasks | All tasks may be in progress or completed |
+| Tasks without folders | Run `create-all` first |
+| Spawn failures | Individual failures don't stop batch; check report at end |
 
 ## Best Practices
 

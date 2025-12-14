@@ -2,11 +2,6 @@
 
 Prime Claude with the multi-agent Git worktree skills system.
 
-## Context Files
-
-@README.md
-@TROUBLESHOOTING.md
-
 ## Skills
 
 @.claude/skills/worktree-operator/SKILL.md

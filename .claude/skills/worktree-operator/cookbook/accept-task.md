@@ -211,62 +211,14 @@ else:
 
 ## Error Handling
 
-### Rebase conflicts
-```
-Rebase has conflicts in:
-  - {file1}
-  - {file2}
+> See SKILL.md "Error Handling" section for complete error reference and recovery procedures.
 
-Options:
-1. Resolve conflicts manually:
-   cd task-{name}/worktree
-   # Edit conflicting files
-   git add <files>
-   git rebase --continue
-
-2. Abort and try merge instead:
-   git rebase --abort
-   git merge {main_branch}
-
-3. Reset task and re-implement after main branch changes
-```
-
-### Tests fail after rebase
-```
-Tests failing after rebase:
-{test output}
-
-The main branch may have introduced changes that conflict with this task's work.
-
-Options:
-1. Fix tests in the worktree, commit, then retry accept
-2. Reset task and re-implement with knowledge of main branch state
-3. Accept anyway if failures are unrelated (not recommended)
-```
-
-### Push rejected
-```
-Push rejected - remote has new commits.
-
-Someone else pushed to {main_branch} while we were merging.
-
-Steps:
-1. Pull latest: git pull --rebase origin {main_branch}
-2. Resolve any conflicts
-3. Re-run tests
-4. Push again
-```
-
-### Worktree removal fails
-```
-Failed to remove worktree:
-{error message}
-
-Options:
-1. Force remove: git worktree remove {path} --force
-2. Manually delete directory and run: git worktree prune
-3. Check if files are locked by another process
-```
+| Error | Quick Fix |
+|-------|-----------|
+| Rebase conflicts | `operator resolve {name}` or manually resolve, `git add`, `git rebase --continue` |
+| Tests fail after rebase | Fix in worktree and commit, or reset task |
+| Push rejected | `git pull --rebase origin {main}`, resolve conflicts, retry |
+| Worktree removal fails | `git worktree remove {path} --force && git worktree prune` |
 
 ## Merge Commit Message Format
 

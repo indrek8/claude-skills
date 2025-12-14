@@ -270,27 +270,12 @@ Options:
 
 ## Error Handling
 
-### Previous feedback exists
-```
-Task '{task_name}' already has feedback from iteration {N-1}.
+> See SKILL.md "Error Handling" section for complete error reference and recovery procedures.
 
-Options:
-1. Append new feedback (continue iteration cycle)
-2. Replace feedback (new issues supersede old)
-3. Review existing feedback first
-```
-
-### No changes since last feedback
-```
-No new commits since last feedback was written.
-
-The sub-agent may not have run yet or may have failed.
-
-Options:
-1. Re-spawn sub-agent
-2. Check if sub-agent is still running
-3. Review current state anyway
-```
+| Error | Quick Fix |
+|-------|-----------|
+| Previous feedback exists | Append new feedback or replace if superseded |
+| No changes since feedback | Re-spawn sub-agent or check if still running |
 
 ## Checklist
 
