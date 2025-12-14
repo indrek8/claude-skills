@@ -34,6 +34,15 @@ from conflict_resolver import (
     is_rebase_in_progress,
 )
 
+# Import error utilities
+from errors import (
+    make_error,
+    rebase_conflict_error,
+    merge_conflict_error,
+    checkout_failed_error,
+    push_failed_error,
+)
+
 # Module logger
 logger = get_logger("git_ops")
 
@@ -131,14 +140,13 @@ def rebase_branch(
         abort_on_conflict: If True, abort rebase on conflict
 
     Returns:
-        dict with rebase results, including detailed conflict info if conflicts occur
+        dict with rebase results
     """
     # Fetch first
     run_command(["git", "fetch", "origin"], cwd=worktree_path)
 
     # Get current branch
     current = get_current_branch(worktree_path)
-    logger.info(f"rebase_branch: Rebasing {current} onto {target_branch}")
 
     # Perform rebase
     returncode, stdout, stderr = run_command(
@@ -150,38 +158,35 @@ def rebase_branch(
         has_conflicts = "CONFLICT" in stderr or "conflict" in stdout.lower()
 
         if has_conflicts and abort_on_conflict:
-            logger.warning(f"rebase_branch: Conflicts detected, aborting rebase")
             run_command(["git", "rebase", "--abort"], cwd=worktree_path)
-            return {
-                "success": False,
-                "error": "Rebase had conflicts and was aborted",
-                "conflicts": True,
-                "aborted": True
-            }
+            result = make_error(
+                "Rebase had conflicts and was aborted",
+                hint="The rebase was automatically aborted due to conflicts.",
+                recovery_options=[
+                    "Review the conflicting files manually",
+                    "Rebase again without abort_on_conflict to resolve interactively",
+                    "Check which commits have conflicts: git log --oneline"
+                ],
+                error_code="REBASE_CONFLICT_ABORTED"
+            )
+            result["conflicts"] = True
+            result["aborted"] = True
+            return result
 
-        logger.error(f"rebase_branch: Rebase failed: {stderr}")
-        if has_conflicts:
-            # Get detailed conflict information
-            conflict_info = detect_conflicts(worktree_path)
-            conflict_report = format_conflict_report(conflict_info)
+        result = make_error(
+            f"Rebase failed: {stderr}",
+            hint="Resolve conflicts manually or abort the rebase.",
+            recovery_options=[
+                "Resolve conflicts, then run: git rebase --continue",
+                "To abort rebase: git rebase --abort",
+                "Check status: git status"
+            ],
+            error_code="REBASE_FAILED",
+            target_branch=target_branch
+        )
+        result["conflicts"] = has_conflicts
+        return result
 
-            return {
-                "success": False,
-                "error": f"Rebase failed: {stderr}",
-                "conflicts": True,
-                "conflict_info": conflict_info,
-                "conflict_report": conflict_report,
-                "hint": "Use 'operator resolve {task}' to resolve conflicts"
-            }
-
-        return {
-            "success": False,
-            "error": f"Rebase failed: {stderr}",
-            "conflicts": False,
-            "hint": "Check git status for more information"
-        }
-
-    logger.info(f"rebase_branch: Successfully rebased {current} onto {target_branch}")
     return {
         "success": True,
         "branch": current,
@@ -210,8 +215,6 @@ def merge_branch(
     Returns:
         dict with merge results
     """
-    logger.info(f"merge_branch: Merging {source_branch} into {target_branch}")
-
     # Switch to target branch
     returncode, stdout, stderr = run_command(
         ["git", "switch", target_branch],
@@ -219,11 +222,7 @@ def merge_branch(
     )
 
     if returncode != 0:
-        logger.error(f"merge_branch: Failed to switch to {target_branch}: {stderr}")
-        return {
-            "success": False,
-            "error": f"Failed to switch to {target_branch}: {stderr}"
-        }
+        return checkout_failed_error(target_branch, stderr)
 
     # Build merge command
     merge_cmd = ["git", "merge"]
@@ -237,15 +236,23 @@ def merge_branch(
 
     if returncode != 0:
         has_conflicts = "CONFLICT" in stderr or "conflict" in stdout.lower()
-        logger.error(f"merge_branch: Merge failed: {stderr}")
-        return {
-            "success": False,
-            "error": f"Merge failed: {stderr}",
-            "conflicts": has_conflicts,
-            "hint": "Resolve conflicts, then run: git commit"
-        }
+        if has_conflicts:
+            result = merge_conflict_error(source_branch, target_branch)
+            result["conflicts"] = True
+            return result
+        return make_error(
+            f"Merge failed: {stderr}",
+            hint="Check the git error message for details.",
+            recovery_options=[
+                "Check status: git status",
+                "Abort merge: git merge --abort",
+                "Check if branches exist: git branch -a"
+            ],
+            error_code="MERGE_FAILED",
+            source_branch=source_branch,
+            target_branch=target_branch
+        )
 
-    logger.info(f"merge_branch: Successfully merged {source_branch} into {target_branch}")
     return {
         "success": True,
         "source": source_branch,
@@ -326,14 +333,12 @@ def sync_all_worktrees(
         dict with sync results for each worktree
     """
     workspace = Path(workspace_path).resolve()
-    logger.info(f"sync_all_worktrees: Syncing all worktrees with {main_branch}")
 
     # Acquire workspace lock for the entire sync operation
     try:
         with workspace_lock(str(workspace), "sync_all_worktrees"):
             return _sync_all_worktrees_locked(workspace, main_branch)
     except LockError as e:
-        logger.error(f"sync_all_worktrees: Lock acquisition failed: {e}")
         return e.to_dict()
 
 
@@ -355,7 +360,6 @@ def _sync_all_worktrees_locked(workspace: Path, main_branch: str) -> dict:
             worktree_path = item / "worktree"
 
             if not worktree_path.exists():
-                logger.debug(f"sync_all_worktrees: Skipping {task_name} - no worktree")
                 results["skipped"].append({
                     "task": task_name,
                     "reason": "No worktree"
@@ -370,13 +374,11 @@ def _sync_all_worktrees_locked(workspace: Path, main_branch: str) -> dict:
             )
 
             if rebase_result["success"]:
-                logger.info(f"sync_all_worktrees: Synced {task_name}")
                 results["synced"].append({
                     "task": task_name,
                     "branch": rebase_result.get("branch")
                 })
             else:
-                logger.warning(f"sync_all_worktrees: Failed to sync {task_name}: {rebase_result.get('error')}")
                 results["failed"].append({
                     "task": task_name,
                     "error": rebase_result.get("error"),
@@ -384,7 +386,6 @@ def _sync_all_worktrees_locked(workspace: Path, main_branch: str) -> dict:
                 })
                 results["success"] = False
 
-    logger.info(f"sync_all_worktrees: Completed - {len(results['synced'])} synced, {len(results['failed'])} failed, {len(results['skipped'])} skipped")
     return results
 
 
@@ -448,11 +449,17 @@ def remove_worktree(repo_path: str, worktree_path: str, force: bool = False) -> 
     returncode, stdout, stderr = run_command(cmd, cwd=repo_path)
 
     if returncode != 0:
-        return {
-            "success": False,
-            "error": stderr.strip(),
-            "hint": "Use force=True to remove with uncommitted changes"
-        }
+        return make_error(
+            f"Failed to remove worktree: {stderr.strip()}",
+            hint="The worktree may have uncommitted changes or be in use.",
+            recovery_options=[
+                f"Force remove: git worktree remove {worktree_path} --force",
+                "Check for uncommitted changes in the worktree",
+                "Ensure no processes are using the worktree"
+            ],
+            error_code="WORKTREE_REMOVE_FAILED",
+            worktree_path=worktree_path
+        )
 
     return {
         "success": True,
@@ -478,10 +485,7 @@ def push_branch(repo_path: str, branch: str, remote: str = "origin") -> dict:
     )
 
     if returncode != 0:
-        return {
-            "success": False,
-            "error": stderr.strip()
-        }
+        return push_failed_error(branch, stderr.strip())
 
     return {
         "success": True,

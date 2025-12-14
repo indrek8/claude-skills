@@ -16,6 +16,9 @@ from validation import ValidationError, validate_task_name, validate_path
 # Import logging utilities
 from logging_config import get_logger
 
+# Import error utilities
+from errors import make_error, task_not_found_error, subagent_timeout_error
+
 # Module logger
 logger = get_logger("health_check")
 
@@ -142,10 +145,7 @@ def write_status(
     task_folder = status_file.parent
 
     if not task_folder.exists():
-        return {
-            "success": False,
-            "error": f"Task folder not found: {task_folder}"
-        }
+        return task_not_found_error(task_name, str(task_folder))
 
     # Read existing status or create new
     if status_file.exists():
@@ -174,18 +174,22 @@ def write_status(
         with open(status_file, 'w') as f:
             json.dump(subagent_status.to_dict(), f, indent=2)
 
-        logger.debug(f"write_status: Updated status for task '{task_name}': {status} - {progress}")
         return {
             "success": True,
             "status_file": str(status_file),
             "status": subagent_status.to_dict()
         }
     except Exception as e:
-        logger.error(f"write_status: Failed to write status file for task '{task_name}': {e}")
-        return {
-            "success": False,
-            "error": f"Failed to write status file: {e}"
-        }
+        return make_error(
+            f"Failed to write status file: {e}",
+            hint="Check file permissions in the task folder.",
+            recovery_options=[
+                f"Check permissions: ls -la {status_file.parent}",
+                "Ensure the task folder is writable"
+            ],
+            error_code="STATUS_WRITE_FAILED",
+            status_file=str(status_file)
+        )
 
 
 def read_status(task_name: str, workspace_path: str = ".") -> dict:
@@ -233,10 +237,16 @@ def read_status(task_name: str, workspace_path: str = ".") -> dict:
             "duration": subagent_status.duration()
         }
     except Exception as e:
-        return {
-            "success": False,
-            "error": f"Failed to read status file: {e}"
-        }
+        return make_error(
+            f"Failed to read status file: {e}",
+            hint="The status file may be corrupted or inaccessible.",
+            recovery_options=[
+                f"Check file: cat {status_file}",
+                "Remove corrupted status file and restart sub-agent"
+            ],
+            error_code="STATUS_READ_FAILED",
+            status_file=str(status_file)
+        )
 
 
 def check_health(
@@ -290,8 +300,10 @@ def check_health(
         result["message"] = f"Sub-agent failed: {subagent_status.error}"
         result["error"] = subagent_status.error
     elif not is_healthy:
+        timeout_result = subagent_timeout_error(task_name, timeout_seconds)
         result["message"] = f"Sub-agent may be hung (no heartbeat in {int(time_since)}s)"
-        result["warning"] = "Consider checking the terminal or resetting the task"
+        result["warning"] = timeout_result.get("hint")
+        result["recovery_options"] = timeout_result.get("recovery_options", [])
     else:
         result["message"] = f"Sub-agent running: {subagent_status.progress}"
 
@@ -455,10 +467,16 @@ def cleanup_status(task_name: str, workspace_path: str = ".") -> dict:
             "message": f"Status file removed: {status_file}"
         }
     except Exception as e:
-        return {
-            "success": False,
-            "error": f"Failed to remove status file: {e}"
-        }
+        return make_error(
+            f"Failed to remove status file: {e}",
+            hint="Check file permissions.",
+            recovery_options=[
+                f"Remove manually: rm {status_file}",
+                f"Check permissions: ls -la {status_file}"
+            ],
+            error_code="STATUS_CLEANUP_FAILED",
+            status_file=str(status_file)
+        )
 
 
 if __name__ == "__main__":

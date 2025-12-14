@@ -36,11 +36,20 @@ DEFAULT_ACQUIRE_TIMEOUT = 30  # seconds
 class LockError(Exception):
     """Exception raised when lock operations fail."""
 
-    def __init__(self, message: str, lock_info: Optional[dict] = None, hint: Optional[str] = None):
+    def __init__(
+        self,
+        message: str,
+        lock_info: Optional[dict] = None,
+        hint: Optional[str] = None,
+        recovery_options: Optional[list] = None,
+        error_code: Optional[str] = None
+    ):
         super().__init__(message)
         self.message = message
         self.lock_info = lock_info
         self.hint = hint
+        self.recovery_options = recovery_options or []
+        self.error_code = error_code
 
     def to_dict(self) -> dict:
         result = {
@@ -52,6 +61,10 @@ class LockError(Exception):
             result["lock_info"] = self.lock_info
         if self.hint:
             result["hint"] = self.hint
+        if self.recovery_options:
+            result["recovery_options"] = self.recovery_options
+        if self.error_code:
+            result["error_code"] = self.error_code
         return result
 
 
@@ -188,7 +201,12 @@ class WorkspaceLock:
         if not self.workspace_path.exists():
             raise LockError(
                 f"Workspace does not exist: {self.workspace_path}",
-                hint="Initialize the workspace first with 'operator init'"
+                hint="Initialize the workspace first with 'operator init'.",
+                recovery_options=[
+                    f"Create directory: mkdir -p {self.workspace_path}",
+                    "Initialize workspace: operator init <repo_url> <branch>"
+                ],
+                error_code="WORKSPACE_NOT_FOUND"
             )
 
         # Try to clean stale lock first
@@ -230,10 +248,20 @@ class WorkspaceLock:
                 if not blocking:
                     lock_info = self._read_lock_info()
                     _get_logger().warning(f"acquire: Lock held by another operation: {lock_info}")
+                    recovery = [
+                        "Wait for the other operation to complete",
+                        "Check lock status: python tools/locking.py status"
+                    ]
+                    if lock_info and lock_info.get("pid"):
+                        recovery.append(f"Check if process {lock_info['pid']} is still running")
+                    recovery.append("Force unlock (if stale): python tools/locking.py unlock")
+
                     raise LockError(
                         "Workspace is locked by another operation",
                         lock_info=lock_info,
-                        hint="Wait for the other operation to complete, or use --force to override"
+                        hint="Another process is currently modifying the workspace.",
+                        recovery_options=recovery,
+                        error_code="LOCK_HELD"
                     )
 
                 # Check timeout
@@ -244,7 +272,13 @@ class WorkspaceLock:
                     raise LockError(
                         f"Timeout waiting for workspace lock after {timeout}s",
                         lock_info=lock_info,
-                        hint="Another operation may be stuck. Check 'operator status' or manually remove .workspace.lock"
+                        hint="Another operation may be stuck or taking too long.",
+                        recovery_options=[
+                            "Check what operation is running",
+                            "Wait and retry",
+                            "Force unlock if the operation is stuck: python tools/locking.py unlock"
+                        ],
+                        error_code="LOCK_TIMEOUT"
                     )
 
                 # Wait a bit and retry

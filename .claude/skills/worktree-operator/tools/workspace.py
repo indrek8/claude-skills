@@ -23,6 +23,17 @@ from validation import (
 # Import logging utilities
 from logging_config import get_logger, log_operation_start, log_operation_success, log_operation_failure
 
+# Import error utilities
+from errors import (
+    make_error,
+    repo_exists_error,
+    repo_not_found_error,
+    workspace_not_found_error,
+    clone_failed_error,
+    checkout_failed_error,
+    invalid_input_error,
+)
+
 # Module logger
 logger = get_logger("workspace")
 
@@ -70,21 +81,18 @@ def init_workspace(
 
     # Validate repo_folder name (simple alphanumeric check)
     if not repo_folder or not repo_folder.replace('-', '').replace('_', '').isalnum():
-        return {
-            "success": False,
-            "error": f"Invalid repo folder name: '{repo_folder}'",
-            "hint": "Use alphanumeric characters, hyphens, or underscores"
-        }
+        return invalid_input_error(
+            field="repo_folder",
+            value=repo_folder or "",
+            reason="Must contain only alphanumeric characters, hyphens, or underscores.",
+            examples=["repo", "my-repo", "project_code"]
+        )
 
     repo_path = workspace / repo_folder
 
     # Validate workspace doesn't already have a repo
     if repo_path.exists():
-        return {
-            "success": False,
-            "error": f"Repository folder already exists: {repo_path}",
-            "hint": "Use a different workspace or remove existing repo folder"
-        }
+        return repo_exists_error(str(repo_path))
 
     # Create workspace directory if needed
     workspace.mkdir(parents=True, exist_ok=True)
@@ -98,11 +106,7 @@ def init_workspace(
 
     if returncode != 0:
         logger.error(f"init_workspace: Failed to clone repository: {stderr}")
-        return {
-            "success": False,
-            "error": f"Failed to clone repository: {stderr}",
-            "command": f"git clone {repo_url} {repo_folder}"
-        }
+        return clone_failed_error(repo_url, stderr)
 
     # Checkout the specified branch
     logger.info(f"init_workspace: Checking out branch {branch}")
@@ -121,11 +125,7 @@ def init_workspace(
 
         if returncode != 0:
             logger.error(f"init_workspace: Failed to checkout/create branch: {stderr}")
-            return {
-                "success": False,
-                "error": f"Failed to checkout/create branch: {stderr}",
-                "command": f"git switch -c {branch}"
-            }
+            return checkout_failed_error(branch, stderr)
 
     # Pull latest (if branch exists on remote)
     run_command(["git", "pull", "--ff-only", "origin", branch], cwd=str(repo_path))
@@ -228,8 +228,7 @@ def workspace_status(workspace_path: str = ".") -> dict:
     }
 
     if not workspace.exists():
-        status["error"] = "Workspace does not exist"
-        return status
+        return workspace_not_found_error(str(workspace))
 
     # Check workspace files
     for filename in ["plan.md", "review-notes.md"]:
@@ -335,9 +334,7 @@ def cleanup_workspace(workspace_path: str = ".", remove_repo: bool = False) -> d
 
     if not repo_path.exists():
         logger.warning(f"cleanup_workspace: Repository not found at {repo_path}")
-        results["error"] = "Repository not found"
-        results["success"] = False
-        return results
+        return repo_not_found_error(str(repo_path))
 
     logger.info(f"cleanup_workspace: Starting cleanup of {workspace}")
 

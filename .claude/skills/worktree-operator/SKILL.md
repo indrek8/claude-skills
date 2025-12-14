@@ -309,6 +309,26 @@ Spawn in new terminal without -p flag, then provide instructions.
 
 ## Error Handling
 
+All errors now include structured recovery hints with actionable options.
+
+### Error Format
+
+Errors return a standardized format:
+```json
+{
+  "success": false,
+  "error": "Human-readable error message",
+  "hint": "Brief actionable hint",
+  "recovery_options": [
+    "First recovery option with command",
+    "Second recovery option"
+  ],
+  "error_code": "ERROR_CODE"
+}
+```
+
+### Common Error Patterns
+
 - **Rebase conflicts**: Use `operator resolve {name}` to view and resolve conflicts
   - Shows conflicted files with preview of conflict markers
   - Offers resolution strategies: ours, theirs, manual, abort
@@ -317,6 +337,44 @@ Spawn in new terminal without -p flag, then provide instructions.
 - **Branch exists**: Suggest force create or different name
 - **Tests fail**: Include in review, decide whether to accept anyway
 - **Dependencies not met**: Spawn blocked, show missing dependencies, suggest `--force` or complete dependencies first
+
+### Diagnose Command
+
+Use the `errors.py diagnose` command to get detailed information about common errors:
+
+```bash
+# Get diagnostic info for a specific error code
+python tools/errors.py diagnose REBASE_CONFLICT
+
+# List all known error codes
+python tools/errors.py list
+```
+
+### Known Error Codes
+
+| Code | Description |
+|------|-------------|
+| REPO_EXISTS | Repository folder already exists |
+| REPO_NOT_FOUND | Repository not found |
+| TASK_EXISTS | Task folder already exists |
+| TASK_NOT_FOUND | Task folder not found |
+| WORKTREE_NOT_FOUND | Worktree missing for task |
+| REBASE_CONFLICT | Rebase has conflicts |
+| MERGE_CONFLICT | Merge has conflicts |
+| TESTS_FAILED | Tests failed during execution |
+| TEST_TIMEOUT | Tests timed out |
+| LOCK_HELD | Workspace locked by another operation |
+| SUBAGENT_TIMEOUT | Sub-agent unresponsive |
+
+### errors.py Module
+
+The `tools/errors.py` module provides:
+
+- `OperatorError`: Exception class with structured error info
+- `make_error()`: Convenience function to create error dicts
+- Pre-defined error functions for common scenarios
+- `diagnose(error_code)`: Get diagnostic info for an error
+- `list_known_errors()`: List all known error codes
 
 ## Dependency Enforcement
 

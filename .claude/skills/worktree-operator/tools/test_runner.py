@@ -25,6 +25,14 @@ def _get_logger():
         _logger = get_logger("test_runner")
     return _logger
 
+# Import error utilities
+from errors import (
+    make_error,
+    tests_failed_error,
+    test_timeout_error,
+    test_detection_failed_error,
+)
+
 
 # Default test timeout (5 minutes)
 DEFAULT_TEST_TIMEOUT = 300
@@ -244,10 +252,16 @@ def run_tests(
         }
 
     if not repo.exists():
-        return {
-            "success": False,
-            "error": f"Repository path does not exist: {repo}"
-        }
+        return make_error(
+            f"Repository path does not exist: {repo}",
+            hint="Check if the path is correct.",
+            recovery_options=[
+                "Verify the repository path exists",
+                "Initialize workspace if needed: operator init"
+            ],
+            error_code="REPO_NOT_FOUND",
+            repo_path=str(repo)
+        )
 
     # Load config for custom test command
     config = {}
@@ -266,18 +280,13 @@ def run_tests(
         if detected:
             cmd = find_working_test_command(str(repo), detected["commands"])
         else:
-            return {
-                "success": False,
-                "error": "Could not auto-detect test command",
-                "hint": "Set 'test_command' in workspace.json or pass test_command parameter"
-            }
+            return test_detection_failed_error(str(repo))
 
     # Use config timeout if available
     if config.get("test_timeout"):
         timeout = config["test_timeout"]
 
     # Run the tests
-    _get_logger().info(f"run_tests: Running tests in {repo} with command: {cmd}")
     result = {
         "success": False,
         "command": cmd,
@@ -295,17 +304,22 @@ def run_tests(
     if returncode == 0:
         result["success"] = True
         result["message"] = f"Tests passed in {result['duration']}s"
-        _get_logger().info(f"run_tests: Tests passed in {result['duration']}s")
     elif returncode == -1:
+        # Test execution failed or timed out
+        timeout_result = test_timeout_error(cmd, timeout)
         result["success"] = False
-        result["error"] = "Test execution failed or timed out"
+        result["error"] = timeout_result["error"]
+        result["hint"] = timeout_result.get("hint")
+        result["recovery_options"] = timeout_result.get("recovery_options", [])
         result["message"] = stderr
-        _get_logger().error(f"run_tests: Test execution failed or timed out")
     else:
+        # Tests failed
+        failed_result = tests_failed_error(cmd, returncode, duration, "execution")
         result["success"] = False
-        result["error"] = f"Tests failed with exit code {returncode}"
-        result["message"] = f"Tests failed. Check stdout/stderr for details."
-        _get_logger().warning(f"run_tests: Tests failed with exit code {returncode}")
+        result["error"] = failed_result["error"]
+        result["hint"] = failed_result.get("hint")
+        result["recovery_options"] = failed_result.get("recovery_options", [])
+        result["message"] = "Tests failed. Check stdout/stderr for details."
 
     return result
 
