@@ -35,6 +35,8 @@ This skill activates when the user's request matches these patterns:
 | "operator reset {name}" | reject-reset.md | Reset worktree, re-spawn |
 | "operator sync" | sync-worktrees.md | Rebase all active worktrees |
 | "operator sync all" | sync-worktrees.md | Same as above |
+| "operator resolve {name}" | resolve-conflicts.md | Show conflicts and resolution options |
+| "operator conflicts {name}" | resolve-conflicts.md | Same as above |
 | "operator status" | (inline) | Show plan.md + worktree status |
 | "operator status {name}" | (inline) | Check sub-agent health for specific task |
 | "operator health {name}" | (inline) | Same as above |
@@ -117,12 +119,23 @@ Python tools available in `tools/`:
 - `list_tasks(workspace_path)` - List all tasks
 
 ### git_ops.py
-- `rebase_branch(worktree_path, target_branch)` - Rebase operation
+- `rebase_branch(worktree_path, target_branch)` - Rebase operation (now includes conflict info)
 - `merge_branch(repo_path, source, target, message)` - Merge branches
 - `delete_branch(repo_path, branch, force, delete_remote)` - Delete branch
 - `sync_all_worktrees(workspace_path, main_branch)` - Sync all worktrees (locked)
 - `get_diff_stats(repo_path, base, head)` - Get diff statistics
 - `get_commits_between(repo_path, base, head)` - Get commit list
+
+### conflict_resolver.py
+- `detect_conflicts(worktree_path)` - Detect and list all conflicts in a worktree
+- `resolve_file(worktree_path, file_path, strategy)` - Resolve single file ("ours"/"theirs"/"manual")
+- `resolve_all(worktree_path, strategy)` - Resolve all conflicts with same strategy
+- `abort_rebase(worktree_path)` - Abort current rebase operation
+- `abort_merge(worktree_path)` - Abort current merge operation
+- `abort_operation(worktree_path)` - Abort either rebase or merge
+- `continue_rebase(worktree_path)` - Continue rebase after resolution
+- `continue_merge(worktree_path, message)` - Complete merge after resolution
+- `format_conflict_report(conflicts, task_name)` - Format human-readable report
 
 ### locking.py
 - `workspace_lock(workspace_path, operation)` - Context manager for workspace lock
@@ -296,7 +309,10 @@ Spawn in new terminal without -p flag, then provide instructions.
 
 ## Error Handling
 
-- **Rebase conflicts**: Report to user, provide conflict files
+- **Rebase conflicts**: Use `operator resolve {name}` to view and resolve conflicts
+  - Shows conflicted files with preview of conflict markers
+  - Offers resolution strategies: ours, theirs, manual, abort
+  - See `cookbook/resolve-conflicts.md` for detailed guidance
 - **Worktree exists**: Suggest reset or different task name
 - **Branch exists**: Suggest force create or different name
 - **Tests fail**: Include in review, decide whether to accept anyway
