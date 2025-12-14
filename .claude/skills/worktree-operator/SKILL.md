@@ -43,6 +43,9 @@ This skill activates when the user's request matches these patterns:
 | "operator health {name}" | (inline) | Same as above |
 | "operator health" | (inline) | Check health of all running sub-agents |
 | "operator unblocked" | (inline) | Show tasks ready to spawn (dependencies met) |
+| "operator create-all" | batch-operations.md | Create folders/worktrees for all pending tasks |
+| "operator spawn-unblocked" | batch-operations.md | Spawn all tasks with met dependencies |
+| "operator spawn-parallel N" | batch-operations.md | Spawn up to N tasks concurrently |
 
 ## Variables
 
@@ -86,6 +89,12 @@ HEADLESS_FLAG: "--dangerously-skip-permissions"
 ## Tools
 
 Python tools available in `tools/`:
+
+### batch_operations.py
+- `create_all_tasks(workspace_path, ticket, main_branch)` - Create folders/worktrees for all PENDING tasks in plan.md
+- `spawn_unblocked_tasks(workspace_path, ticket, model, force)` - Spawn all tasks with met dependencies
+- `spawn_parallel(max_parallel, workspace_path, ticket, model, force)` - Spawn up to N tasks concurrently
+- `format_batch_report(result)` - Format batch operation result as human-readable report
 
 ### fork_terminal.py
 - `fork_terminal(command, working_dir)` - Open new terminal and run command
