@@ -23,6 +23,9 @@ from health_check import mark_started, mark_running
 # Import logging utilities
 from logging_config import get_logger
 
+# Import plan parser for dependency checking
+from plan_parser import check_dependencies
+
 # Module logger
 logger = get_logger("fork_terminal")
 
@@ -173,7 +176,8 @@ def spawn_forked_subagent(
     ticket: str,
     workspace_path: str = ".",
     model: str = "opus",
-    iteration: int = 1
+    iteration: int = 1,
+    force: bool = False
 ) -> dict:
     """
     Spawn a sub-agent in a forked terminal to work on a task.
@@ -184,6 +188,7 @@ def spawn_forked_subagent(
         workspace_path: Path to workspace root
         model: Model to use (opus, sonnet, haiku)
         iteration: Current iteration number
+        force: If True, skip dependency checking and spawn anyway
 
     Returns:
         dict with spawn result
@@ -202,6 +207,27 @@ def spawn_forked_subagent(
             "hint": getattr(e, 'hint', "Check input format and try again"),
             "validation_error": True
         }
+
+    # Check dependencies before spawning (unless force is True)
+    if not force:
+        dep_check = check_dependencies(task_name, str(workspace))
+        if dep_check["success"] and not dep_check["can_spawn"]:
+            return {
+                "success": False,
+                "error": dep_check.get("error", "Dependencies not met"),
+                "hint": dep_check.get("hint", "Use --force to override dependency check"),
+                "missing_dependencies": dep_check.get("missing", []),
+                "completed_dependencies": dep_check.get("completed", []),
+                "dependency_check": True
+            }
+        # Include warning if task doesn't exist in plan
+        if dep_check.get("warning"):
+            # Store warning to include in result later
+            dep_warning = dep_check["warning"]
+        else:
+            dep_warning = None
+    else:
+        dep_warning = "Dependency check skipped (--force)"
 
     task_folder = workspace / f"task-{task_name}"
     worktree_path = task_folder / "worktree"
@@ -318,6 +344,10 @@ BEGIN WORK NOW.'''
     else:
         logger.error(f"spawn_forked_subagent: Failed to fork terminal for task '{task_name}': {result.get('error')}")
 
+        # Include dependency warning if any
+        if dep_warning:
+            result["warning"] = dep_warning
+
     return result
 
 
@@ -326,27 +356,37 @@ if __name__ == "__main__":
 
     if len(sys.argv) < 2:
         print("Usage: fork_terminal.py <command>")
-        print("   or: fork_terminal.py --spawn <task_name> <ticket> [workspace] [model]")
+        print("   or: fork_terminal.py --spawn <task_name> <ticket> [workspace] [model] [--force]")
         sys.exit(1)
 
     if sys.argv[1] == "--spawn":
         if len(sys.argv) < 4:
-            print("Usage: fork_terminal.py --spawn <task_name> <ticket> [workspace] [model]")
+            print("Usage: fork_terminal.py --spawn <task_name> <ticket> [workspace] [model] [--force]")
             sys.exit(1)
 
-        task_name = sys.argv[2]
-        ticket = sys.argv[3]
-        workspace = sys.argv[4] if len(sys.argv) > 4 else "."
-        model = sys.argv[5] if len(sys.argv) > 5 else "opus"
+        # Parse arguments, handling --force flag
+        args = sys.argv[2:]
+        force = "--force" in args
+        if force:
+            args.remove("--force")
 
-        result = spawn_forked_subagent(task_name, ticket, workspace, model)
+        task_name = args[0]
+        ticket = args[1]
+        workspace = args[2] if len(args) > 2 else "."
+        model = args[3] if len(args) > 3 else "opus"
+
+        result = spawn_forked_subagent(task_name, ticket, workspace, model, force=force)
 
         if result["success"]:
             print(f"Success: {result.get('message', 'Sub-agent spawned')}")
+            if result.get("warning"):
+                print(f"Warning: {result['warning']}")
         else:
             print(f"Error: {result['error']}")
             if "hint" in result:
                 print(f"Hint: {result['hint']}")
+            if result.get("missing_dependencies"):
+                print(f"Missing dependencies: {', '.join(result['missing_dependencies'])}")
             sys.exit(1)
     else:
         # Raw command mode

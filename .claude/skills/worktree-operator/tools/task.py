@@ -31,6 +31,9 @@ from locking import workspace_lock, LockError
 # Import logging utilities
 from logging_config import get_logger
 
+# Import plan parser for dependency checking
+from plan_parser import check_dependencies
+
 # Module logger
 logger = get_logger("task")
 
@@ -343,7 +346,7 @@ _Describe the objective here_
                 }
 
             logger.info(f"create_task: Task '{task_name}' created successfully on branch {sub_branch}")
-            return {
+            result = {
                 "success": True,
                 "task_dir": str(task_dir),
                 "worktree_path": str(worktree_path),
@@ -352,6 +355,16 @@ _Describe the objective here_
                 "files_created": ["spec.md", "feedback.md", "results.md"],
                 "message": f"Task '{task_name}' created successfully"
             }
+
+            # Check dependencies and add warning if not met
+            dep_check = check_dependencies(task_name, str(workspace))
+            if dep_check["success"] and dep_check.get("task_exists"):
+                if not dep_check["can_spawn"]:
+                    result["warning"] = f"Dependencies not met: {', '.join(dep_check.get('missing', []))}"
+                    result["missing_dependencies"] = dep_check.get("missing", [])
+                    result["hint"] = "Complete dependencies before spawning, or use --force to override"
+
+            return result
 
     except LockError as e:
         return e.to_dict()
