@@ -21,6 +21,7 @@ A complete workflow and Claude Code skill system for parallel AI agent developme
 13. [Helper Scripts](#helper-scripts)
 14. [Common Issues and Solutions](#common-issues-and-solutions)
 15. [Quick Reference](#quick-reference)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -1611,4 +1612,36 @@ done
 ### Check Status
 ```bash
 ./task-status.sh ./myworkspace feature/K-123_feature_name
+```
+
+---
+
+## Troubleshooting
+
+For comprehensive troubleshooting guidance, including:
+
+- **Error Code Reference** - All error codes with symptoms, causes, and recovery options
+- **Common Issues and Solutions** - Step-by-step solutions for frequent problems
+- **Recovery Procedures** - How to recover from conflicts, failed accepts, stuck locks, etc.
+- **Debugging Tips** - Commands and techniques for diagnosing issues
+
+See the dedicated **[Troubleshooting Guide](TROUBLESHOOTING.md)**.
+
+### Quick Diagnostic Commands
+
+```bash
+# List all error codes
+python tools/errors.py list
+
+# Diagnose specific error
+python tools/errors.py diagnose <error_code>
+
+# Check sub-agent health
+python tools/health_check.py health <task_name>
+
+# Check workspace lock status
+python tools/locking.py status
+
+# Detect conflicts
+python tools/conflict_resolver.py detect <worktree_path>
 ```
