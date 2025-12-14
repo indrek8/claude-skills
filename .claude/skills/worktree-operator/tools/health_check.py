@@ -34,6 +34,15 @@ DEFAULT_HEARTBEAT_INTERVAL = 60
 DEFAULT_HEARTBEAT_TIMEOUT = 600  # 10 minutes
 
 
+def _get_health_check_timeout(workspace_path: str) -> int:
+    """Get health check timeout from config or use default."""
+    try:
+        from config import get_config_value
+        return get_config_value(workspace_path, "health_check_timeout", DEFAULT_HEARTBEAT_TIMEOUT)
+    except ImportError:
+        return DEFAULT_HEARTBEAT_TIMEOUT
+
+
 class SubagentStatus:
     """Represents the status of a sub-agent."""
 
@@ -252,7 +261,7 @@ def read_status(task_name: str, workspace_path: str = ".") -> dict:
 def check_health(
     task_name: str,
     workspace_path: str = ".",
-    timeout_seconds: int = DEFAULT_HEARTBEAT_TIMEOUT
+    timeout_seconds: int = None
 ) -> dict:
     """
     Check health of a sub-agent.
@@ -260,11 +269,15 @@ def check_health(
     Args:
         task_name: Name of the task
         workspace_path: Path to workspace
-        timeout_seconds: Heartbeat timeout in seconds
+        timeout_seconds: Heartbeat timeout in seconds (uses config if None)
 
     Returns:
         dict with health status
     """
+    # Use config timeout if not specified
+    if timeout_seconds is None:
+        timeout_seconds = _get_health_check_timeout(workspace_path)
+
     status_result = read_status(task_name, workspace_path)
 
     if not status_result["success"]:

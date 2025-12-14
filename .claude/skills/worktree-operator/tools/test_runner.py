@@ -213,16 +213,20 @@ def load_workspace_config(workspace_path: str) -> dict:
     Returns:
         Config dict (empty if no config file)
     """
-    config_path = Path(workspace_path) / "workspace.json"
-
-    if config_path.exists():
-        try:
-            with open(config_path, 'r') as f:
-                return json.load(f)
-        except Exception:
-            pass
-
-    return {}
+    try:
+        from config import get_config
+        config = get_config(workspace_path)
+        return config.to_dict()
+    except ImportError:
+        # Fallback for when config module is not available
+        config_path = Path(workspace_path) / "workspace.json"
+        if config_path.exists():
+            try:
+                with open(config_path, 'r') as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
 
 
 def run_tests(
