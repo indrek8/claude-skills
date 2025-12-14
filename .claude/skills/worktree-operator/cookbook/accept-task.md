@@ -79,7 +79,7 @@ cd repo
 git push origin ${MAIN_BRANCH}
 ```
 
-### 5. Cleanup Worktree
+### 5. Cleanup Worktree and Task Folder
 
 ```bash
 cd repo
@@ -89,7 +89,13 @@ git worktree remove ../task-${TASK}/worktree
 
 # Or force if needed
 git worktree remove ../task-${TASK}/worktree --force
+
+# Remove task folder (including spec.md, feedback.md, results.md)
+# This is done automatically by accept_task() after worktree removal
+rm -rf ../task-${TASK}
 ```
+
+**Note:** The Python `accept_task()` function automatically removes the entire task folder after successfully removing the worktree. This cleanup happens after the point of no return (after push), so failures are non-fatal and only logged as warnings.
 
 ### 6. Delete Sub-Branch
 
@@ -161,16 +167,12 @@ Actions completed:
   ✓ Merged with --no-ff
   ✓ Pushed to origin
   ✓ Removed worktree
+  ✓ Removed task folder
   ✓ Deleted local branch
   ✓ Deleted remote branch
   ✓ Synced {count} remaining worktrees
   ✓ Updated plan.md
   ✓ Logged in review-notes.md
-
-Task documentation preserved at: task-{task_name}/
-  - spec.md (original specification)
-  - feedback.md (iteration history)
-  - results.md (final results)
 
 Next tasks in plan:
   - {next_pending_task}
@@ -298,9 +300,9 @@ Branch: feature/K-123/fix-logging
 - [ ] Tests pass after merge
 - [ ] Main branch pushed
 - [ ] Worktree removed
+- [ ] Task folder removed (spec.md, feedback.md, results.md)
 - [ ] Local branch deleted
 - [ ] Remote branch deleted
 - [ ] Other worktrees synced
 - [ ] plan.md updated (COMPLETED)
 - [ ] review-notes.md logged
-- [ ] Task folder preserved (spec, feedback, results)

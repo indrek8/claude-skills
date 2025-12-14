@@ -6,6 +6,7 @@ Handles creation, synchronization, acceptance, and reset of tasks and their work
 """
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -789,6 +790,21 @@ def _accept_task_locked(
             results["steps"].append("✓ Worktree removed (forced)")
     else:
         results["steps"].append("✓ Worktree removed")
+
+    # Step 5b: Remove task folder (non-fatal cleanup)
+    results["steps"].append("Removing task folder...")
+    try:
+        if task_dir.exists():
+            shutil.rmtree(task_dir)
+            logger.info(f"Task folder removed: {task_dir}")
+            results["steps"].append("✓ Task folder removed")
+        else:
+            logger.info(f"Task folder already removed: {task_dir}")
+            results["steps"].append("✓ Task folder already removed")
+    except Exception as e:
+        warning_msg = f"Warning: Could not remove task folder: {e} (non-fatal)"
+        results["errors"].append(warning_msg)
+        logger.warning(f"Could not remove task folder {task_dir}: {e}")
 
     # Step 6: Delete local branch
     results["steps"].append("Deleting local branch...")
