@@ -3,6 +3,7 @@
 Logging configuration for worktree operator tools.
 
 Provides structured logging with file rotation, timestamps, and operation context.
+Supports multi-process safety with separate log files for operator and sub-agents.
 """
 
 import logging
@@ -12,10 +13,11 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 # Default configuration
 DEFAULT_LOG_FILE = "workspace.log"
+DEFAULT_SUBAGENT_LOG_FILE = "subagent.log"
 DEFAULT_LOG_LEVEL = logging.INFO
 DEFAULT_MAX_BYTES = 10 * 1024 * 1024  # 10MB
 DEFAULT_BACKUP_COUNT = 5
@@ -30,6 +32,96 @@ _log_file_handler: Optional[logging.Handler] = None
 _initialized = False
 
 
+def find_workspace_root(start_path: Optional[Path] = None, max_levels: int = 10) -> Optional[Path]:
+    """
+    Find the workspace root by looking for plan.md.
+
+    Traverses up from start_path (or cwd) looking for a directory containing plan.md.
+
+    Args:
+        start_path: Starting path for search (default: current working directory)
+        max_levels: Maximum number of parent directories to check (default: 10)
+
+    Returns:
+        Path to workspace root directory, or None if not found
+    """
+    current = start_path or Path.cwd()
+
+    # Check current directory and parents
+    for _ in range(max_levels):
+        if (current / "plan.md").exists():
+            return current
+
+        # Move to parent
+        parent = current.parent
+        if parent == current:  # Reached filesystem root
+            break
+        current = parent
+
+    return None
+
+
+def find_task_folder(start_path: Optional[Path] = None, max_levels: int = 5) -> Optional[Path]:
+    """
+    Find the task folder from a worktree path.
+
+    Looks for a parent directory that contains spec.md, which indicates a task folder.
+    Typically matches pattern: task-{name}/worktree/...
+
+    Args:
+        start_path: Starting path for search (default: current working directory)
+        max_levels: Maximum number of parent directories to check (default: 5)
+
+    Returns:
+        Path to task folder, or None if not in a task context
+    """
+    current = start_path or Path.cwd()
+
+    # Check if we're inside a worktree by looking for parent with spec.md
+    for _ in range(max_levels):
+        # Check if current directory is 'worktree' and parent has spec.md
+        if current.name == "worktree" and (current.parent / "spec.md").exists():
+            return current.parent
+
+        # Also check if parent has spec.md (we might be deeper in worktree)
+        if (current / "spec.md").exists():
+            return current
+
+        # Move to parent
+        parent = current.parent
+        if parent == current:  # Reached filesystem root
+            break
+        current = parent
+
+    return None
+
+
+def detect_log_context(start_path: Optional[Path] = None) -> Tuple[str, Optional[Path]]:
+    """
+    Detect whether we're running as operator or sub-agent.
+
+    Args:
+        start_path: Starting path for detection (default: current working directory)
+
+    Returns:
+        Tuple of (context_type, log_directory) where:
+        - context_type is "operator" or "subagent"
+        - log_directory is the directory where logs should be written
+    """
+    # First check if we're in a task worktree
+    task_folder = find_task_folder(start_path)
+    if task_folder:
+        return "subagent", task_folder
+
+    # Not in worktree, find workspace root for operator logs
+    workspace = find_workspace_root(start_path)
+    if workspace:
+        return "operator", workspace
+
+    # Fallback to current directory if no workspace found
+    return "operator", start_path or Path.cwd()
+
+
 def setup_logging(
     log_file: Optional[str] = None,
     log_level: int = DEFAULT_LOG_LEVEL,
@@ -40,12 +132,15 @@ def setup_logging(
     """
     Set up logging with rotating file handler.
 
+    Uses auto-detection to determine if running as operator or sub-agent,
+    and sets up logging in the appropriate location.
+
     Args:
-        log_file: Path to log file (default: workspace.log in workspace or cwd)
+        log_file: Path to log file (explicit override)
         log_level: Logging level (default: INFO)
         max_bytes: Maximum log file size before rotation (default: 10MB)
         backup_count: Number of backup files to keep (default: 5)
-        workspace_path: Workspace directory for log file (default: current directory)
+        workspace_path: Workspace directory for log file (explicit override)
 
     Returns:
         Root logger for the operator tools
@@ -53,14 +148,25 @@ def setup_logging(
     global _log_file_handler, _initialized
 
     # Determine log file path
+    context_type = "unknown"  # Default value for explicit log_file case
+
     if log_file:
         log_path = Path(log_file)
+        # Try to detect context even when explicit log file provided
+        detected_type, _ = detect_log_context()
+        context_type = detected_type
     elif workspace_path:
+        # Explicit workspace path provided - always use workspace.log
+        # (caller is explicitly providing workspace, not auto-detecting)
+        context_type = "operator"
         log_path = Path(workspace_path) / DEFAULT_LOG_FILE
     else:
-        # Try to find workspace path from environment or use cwd
-        workspace = os.environ.get("OPERATOR_WORKSPACE", ".")
-        log_path = Path(workspace) / DEFAULT_LOG_FILE
+        # Auto-detect context and location
+        context_type, log_dir = detect_log_context()
+        if context_type == "subagent":
+            log_path = log_dir / DEFAULT_SUBAGENT_LOG_FILE
+        else:
+            log_path = log_dir / DEFAULT_LOG_FILE
 
     # Ensure parent directory exists
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,9 +198,48 @@ def setup_logging(
     _initialized = True
 
     # Log initialization
-    root_logger.info(f"Logging initialized: {log_path}")
+    root_logger.info(f"Logging initialized: {log_path} (context: {context_type})")
 
     return root_logger
+
+
+def setup_subagent_logging(
+    task_name: str,
+    workspace_path: str,
+    log_level: int = DEFAULT_LOG_LEVEL,
+    max_bytes: int = DEFAULT_MAX_BYTES,
+    backup_count: int = DEFAULT_BACKUP_COUNT
+) -> logging.Logger:
+    """
+    Explicitly set up logging for a sub-agent.
+
+    This function should be called by sub-agents at startup to ensure logs
+    go to the task-specific log file instead of the main workspace log.
+
+    Args:
+        task_name: Name of the task (e.g., "fix-bug")
+        workspace_path: Path to the workspace root
+        log_level: Logging level (default: INFO)
+        max_bytes: Maximum log file size before rotation (default: 10MB)
+        backup_count: Number of backup files to keep (default: 5)
+
+    Returns:
+        Root logger configured for the sub-agent
+    """
+    # Build path to task folder
+    task_folder = Path(workspace_path) / f"task-{task_name}"
+    log_path = task_folder / DEFAULT_SUBAGENT_LOG_FILE
+
+    # Ensure task folder exists
+    task_folder.mkdir(parents=True, exist_ok=True)
+
+    # Use setup_logging with explicit log file
+    return setup_logging(
+        log_file=str(log_path),
+        log_level=log_level,
+        max_bytes=max_bytes,
+        backup_count=backup_count
+    )
 
 
 def get_logger(name: str, task_name: Optional[str] = None) -> logging.Logger:
