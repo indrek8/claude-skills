@@ -33,6 +33,15 @@ DEFAULT_LOCK_TIMEOUT = 3600  # seconds
 DEFAULT_ACQUIRE_TIMEOUT = 30  # seconds
 
 
+def _get_lock_timeout(workspace_path: str) -> int:
+    """Get lock timeout from config or use default."""
+    try:
+        from config import get_config_value
+        return get_config_value(workspace_path, "lock_timeout", DEFAULT_ACQUIRE_TIMEOUT)
+    except ImportError:
+        return DEFAULT_ACQUIRE_TIMEOUT
+
+
 class LockError(Exception):
     """Exception raised when lock operations fail."""
 
@@ -322,7 +331,7 @@ class WorkspaceLock:
 def workspace_lock(
     workspace_path: str,
     operation: str = "unknown",
-    timeout: int = DEFAULT_ACQUIRE_TIMEOUT,
+    timeout: int = None,
     blocking: bool = True
 ) -> Generator[WorkspaceLock, None, None]:
     """
@@ -331,7 +340,7 @@ def workspace_lock(
     Args:
         workspace_path: Path to the workspace directory
         operation: Name of the operation (for debugging)
-        timeout: Maximum time to wait for lock
+        timeout: Maximum time to wait for lock (uses config if None)
         blocking: Whether to wait for lock or fail immediately
 
     Yields:
@@ -345,6 +354,10 @@ def workspace_lock(
             # Perform exclusive operations
             pass
     """
+    # Use config timeout if not specified
+    if timeout is None:
+        timeout = _get_lock_timeout(workspace_path)
+
     lock = WorkspaceLock(workspace_path, operation)
     try:
         lock.acquire(timeout=timeout, blocking=blocking)

@@ -166,6 +166,14 @@ Python tools available in `tools/`:
 - `check_scope(task_name, workspace_path, main_branch, ticket)` - Check for out-of-scope changes
 - `format_analysis_report(analysis)` - Format analysis as readable report
 
+### config.py
+- `load_config(workspace_path)` - Load and validate workspace.json
+- `get_config(workspace_path)` - Get config (always returns WorkspaceConfig, defaults if missing)
+- `get_config_value(workspace_path, key, default)` - Get specific config value with fallback
+- `create_default_config(workspace_path)` - Create template workspace.json
+- `show_config(workspace_path)` - Show current configuration
+- `clear_config_cache(workspace_path)` - Clear cached configuration
+
 ## File Structure
 
 The operator maintains this workspace structure:
@@ -195,6 +203,67 @@ myworkspace/                     # Operator root (NOT a git repo)
 | spec.md | Task specification | Operator |
 | feedback.md | Iteration feedback | Operator |
 | results.md | Work summary | Sub-agent |
+
+## Workspace Configuration
+
+The optional `workspace.json` file allows customizing workspace behavior. All settings have sensible defaults.
+
+### Configuration Schema
+
+```json
+{
+  "test_command": "npm test",
+  "test_timeout": 300,
+  "default_model": "opus",
+  "health_check_timeout": 600,
+  "lock_timeout": 60,
+  "auto_sync_after_accept": true,
+  "push_after_accept": true,
+  "delete_remote_branch": true,
+  "main_branch": "main",
+  "ticket_prefix": "K-123"
+}
+```
+
+### Configuration Options
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| test_command | string | (auto-detect) | Test command to run (e.g., "npm test", "pytest") |
+| test_timeout | int | 300 | Test timeout in seconds (5 minutes) |
+| default_model | string | "opus" | Default model for sub-agents ("opus", "sonnet", "haiku") |
+| health_check_timeout | int | 600 | Health check timeout in seconds (10 minutes) |
+| lock_timeout | int | 60 | Lock acquisition timeout in seconds |
+| auto_sync_after_accept | bool | true | Sync other worktrees after accepting a task |
+| push_after_accept | bool | true | Push to remote after accepting a task |
+| delete_remote_branch | bool | true | Delete remote branch after accepting |
+| main_branch | string | "main" | Default main branch name |
+| ticket_prefix | string | null | Default ticket prefix (e.g., "PROJ-") |
+
+### Configuration Commands
+
+```bash
+# Create default workspace.json
+python tools/config.py init --workspace .
+
+# Show current configuration
+python tools/config.py show --workspace .
+
+# Validate configuration file
+python tools/config.py validate --workspace .
+```
+
+### Configuration Usage
+
+Configuration values are automatically used by the operator tools:
+
+- **test_runner.py** uses `test_command` and `test_timeout`
+- **health_check.py** uses `health_check_timeout`
+- **fork_terminal.py** uses `default_model`
+- **task.py** uses `push_after_accept`, `delete_remote_branch`, `auto_sync_after_accept`
+- **locking.py** uses `lock_timeout`
+
+If no `workspace.json` exists, all tools use their default values.
 
 ## Instructions
 

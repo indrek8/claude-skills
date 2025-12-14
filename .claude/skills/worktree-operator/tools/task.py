@@ -52,6 +52,24 @@ from errors import (
 logger = get_logger("task")
 
 
+def _get_accept_config(workspace_path: str) -> dict:
+    """Get accept-related configuration from workspace config."""
+    try:
+        from config import get_config
+        config = get_config(workspace_path)
+        return {
+            "push_after_accept": config.push_after_accept,
+            "delete_remote_branch": config.delete_remote_branch,
+            "auto_sync_after_accept": config.auto_sync_after_accept,
+        }
+    except ImportError:
+        return {
+            "push_after_accept": True,
+            "delete_remote_branch": True,
+            "auto_sync_after_accept": True,
+        }
+
+
 def run_command(cmd: list[str], cwd: Optional[str] = None) -> Tuple[int, str, str]:
     """Run a shell command and return (returncode, stdout, stderr)."""
     result = subprocess.run(
@@ -503,8 +521,8 @@ def accept_task(
     task_name: str,
     main_branch: str,
     workspace_path: str = ".",
-    push: bool = True,
-    delete_remote_branch: bool = True
+    push: bool = None,
+    delete_remote_branch: bool = None
 ) -> dict:
     """
     Accept a task: rebase, merge into main branch, cleanup.
@@ -520,12 +538,18 @@ def accept_task(
         task_name: Task name
         main_branch: Main feature branch
         workspace_path: Path to workspace
-        push: Whether to push the main branch after merge
-        delete_remote_branch: Whether to delete the remote sub-branch
+        push: Whether to push the main branch after merge (uses config if None)
+        delete_remote_branch: Whether to delete the remote sub-branch (uses config if None)
 
     Returns:
         dict with acceptance results
     """
+    # Get config defaults if not specified
+    accept_config = _get_accept_config(workspace_path)
+    if push is None:
+        push = accept_config["push_after_accept"]
+    if delete_remote_branch is None:
+        delete_remote_branch = accept_config["delete_remote_branch"]
     # Validate inputs
     try:
         ticket = validate_ticket(ticket)

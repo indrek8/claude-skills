@@ -41,6 +41,15 @@ from errors import (
 logger = get_logger("fork_terminal")
 
 
+def _get_default_model(workspace_path: str) -> str:
+    """Get default model from config or use default."""
+    try:
+        from config import get_config_value
+        return get_config_value(workspace_path, "default_model", "opus")
+    except ImportError:
+        return "opus"
+
+
 def escape_for_applescript(s: str) -> str:
     """
     Properly escape a string for use in AppleScript.
@@ -182,7 +191,7 @@ def spawn_forked_subagent(
     task_name: str,
     ticket: str,
     workspace_path: str = ".",
-    model: str = "opus",
+    model: str = None,
     iteration: int = 1,
     force: bool = False
 ) -> dict:
@@ -193,13 +202,17 @@ def spawn_forked_subagent(
         task_name: Name of the task (e.g., "fix-logging")
         ticket: Ticket ID (e.g., "K-123")
         workspace_path: Path to workspace root
-        model: Model to use (opus, sonnet, haiku)
+        model: Model to use (opus, sonnet, haiku). Uses config default if None.
         iteration: Current iteration number
         force: If True, skip dependency checking and spawn anyway
 
     Returns:
         dict with spawn result
     """
+    # Use config default model if not specified
+    if model is None:
+        model = _get_default_model(workspace_path)
+
     # Validate all inputs first
     try:
         task_name = validate_task_name(task_name)
@@ -368,7 +381,7 @@ if __name__ == "__main__":
         task_name = args[0]
         ticket = args[1]
         workspace = args[2] if len(args) > 2 else "."
-        model = args[3] if len(args) > 3 else "opus"
+        model = args[3] if len(args) > 3 else None  # Use config default
 
         result = spawn_forked_subagent(task_name, ticket, workspace, model, force=force)
 
