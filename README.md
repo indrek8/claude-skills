@@ -52,21 +52,35 @@ This system enables an **operator** (orchestrating AI agent) to manage multiple 
 
 ### Installing the Skills
 
-Copy the `.claude/skills/` directory to your project or home directory:
+Copy the `skills/` and `commands/` directories to your project or home `.claude` directory:
 
 ```bash
 # Option 1: Project-level installation (recommended)
 # Skills will be available when running Claude Code in this project
-cp -r .claude/skills/ /path/to/your/project/.claude/skills/
 
-# Option 2a: User-level installation
-# Skills will be available in all Claude Code sessions
-cp -r .claude/skills/ ~/.claude/skills/
+# 1a) Copy from local clone
+cp -r skills/* /path/to/your/project/.claude/skills/
+cp -r commands/* /path/to/your/project/.claude/commands/
 
-# Option 2b: User-level installation from github
+# 1b) Install from GitHub
 TMP_DIR=$(mktemp -d) \
   && git clone --depth 1 git@github.com:indrek8/claude-skills.git "$TMP_DIR" \
-  && cp -R "$TMP_DIR/.claude" . \
+  && cp -r "$TMP_DIR/skills/"* /path/to/your/project/.claude/skills/ \
+  && cp -r "$TMP_DIR/commands/"* /path/to/your/project/.claude/commands/ \
+  && rm -rf "$TMP_DIR"
+
+# Option 2: User-level installation
+# Skills will be available in all Claude Code sessions
+
+# 2a) Copy from local clone
+cp -r skills/* ~/.claude/skills/
+cp -r commands/* ~/.claude/commands/
+
+# 2b) Install from GitHub
+TMP_DIR=$(mktemp -d) \
+  && git clone --depth 1 git@github.com:indrek8/claude-skills.git "$TMP_DIR" \
+  && cp -r "$TMP_DIR/skills/"* ~/.claude/skills/ \
+  && cp -r "$TMP_DIR/commands/"* ~/.claude/commands/ \
   && rm -rf "$TMP_DIR"
 ```
 
