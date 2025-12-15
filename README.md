@@ -1,5 +1,9 @@
 # Multi-Agent Git Workflow with Worktrees
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/indrek8/claude-skills)](https://github.com/indrek8/claude-skills/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/indrek8/claude-skills)](https://github.com/indrek8/claude-skills/issues)
+
 A complete workflow and Claude Code skill system for parallel AI agent development using Git worktrees, designed for operator/sub-agent orchestration patterns.
 
 ---
@@ -39,6 +43,8 @@ This system enables an **operator** (orchestrating AI agent) to manage multiple 
 - Clean separation of concerns (operator orchestrates, sub-agents implement)
 - Safe experimentation (worktrees are isolated)
 - Full audit trail (plan.md, review-notes.md, task docs preserved)
+
+[Back to Top](#table-of-contents)
 
 ---
 
@@ -141,9 +147,31 @@ This command loads all skills, templates, cookbooks, and prompts into context, g
 - Sub-agent cookbooks (implement, test, refactor, review modes)
 - Context handoff and review prompts
 
+[Back to Top](#table-of-contents)
+
 ---
 
 ## Quick Start Guide
+
+**Get started in 5 commands:**
+
+```bash
+mkdir myworkspace && cd myworkspace    # 1. Create workspace
+claude                                  # 2. Start Claude Code
+```
+
+Then tell Claude:
+```
+operator init <repo-url> <branch>       # 3. Initialize
+operator plan                           # 4. Create plan
+operator create <task-name>             # 5. Create task
+operator spawn <task-name>              # 6. Run sub-agent
+operator accept <task-name>             # 7. Merge when done
+```
+
+**Detailed steps below** | [Skip to Workspace Structure](#workspace-structure)
+
+---
 
 ### Step 1: Create an Empty Workspace
 
@@ -168,10 +196,7 @@ Repository: git@github.com:myorg/myrepo.git
 Branch: feature/K-123_user_auth
 ```
 
-Claude will:
-- Clone the repository to `repo/`
-- Create `plan.md` and `review-notes.md`
-- Set up the workspace structure
+Claude will clone the repo, create `plan.md` and `review-notes.md`, and set up the workspace structure.
 
 ### Step 4: Create a Plan
 
@@ -179,45 +204,31 @@ Claude will:
 operator analyze and create plan
 ```
 
-Claude will:
-- Analyze the codebase
-- Identify tasks needed
-- Write a structured `plan.md`
+Claude will analyze the codebase, identify tasks, and write a structured `plan.md`.
 
 ### Step 5: Create and Execute Tasks
 
 ```
 operator create task fix-logging
-```
-
-Claude will:
-- Create `task-fix-logging/` folder
-- Create the worktree with a sub-branch
-- Write `spec.md` for the task
-
-```
 operator run subagent on fix-logging
 ```
 
-Claude will spawn a sub-agent to implement the task.
+Claude will create the task folder with worktree and spec, then spawn a sub-agent to implement.
 
 ### Step 6: Review and Accept
 
 ```
 operator review fix-logging
-```
-
-Claude will show the diff and results. Then:
-
-```
 operator accept fix-logging
 ```
 
-Claude will rebase, merge, and cleanup.
+Claude will show the diff and results, then rebase, merge, and cleanup.
 
 ### Step 7: Continue with Next Task
 
 Repeat steps 5-6 for each task in your plan.
+
+[Back to Top](#table-of-contents)
 
 ---
 
@@ -257,6 +268,8 @@ myworkspace/                              # operator root (NOT a git repo)
 - All `.md` files live outside git repos - safe from commits/merges
 - Each task gets its own folder containing docs + worktree
 - `repo/` and `task-*/` folders are siblings under workspace
+
+[Back to Top](#table-of-contents)
 
 ---
 
@@ -417,6 +430,8 @@ Implemented structured JSON logging for foo service.
 - ghi9012: feat: add request ID propagation
 ```
 
+[Back to Top](#table-of-contents)
+
 ---
 
 ## Git Branch Structure
@@ -437,6 +452,8 @@ develop                                   # shared long-lived branch (NEVER reba
 |------|----------------|--------|
 | Main feature | `feature/K-123_feature_name` | `repo/` |
 | Sub-task | `feature/K-123/<task-name>` | `task-<task-name>/worktree/` |
+
+[Back to Top](#table-of-contents)
 
 ---
 
@@ -489,6 +506,8 @@ The **worker**. Implements specific tasks in isolated worktrees.
 | **Inline** | `operator spawn {name}` | Small tasks, quick fixes | Runs in current session (consumes tokens) |
 | **Forked** | `operator spawn forked {name}` | Larger tasks, parallel work | Runs in new terminal (headless, no token cost) |
 | **Interactive** | `operator spawn interactive {name}` | Complex/unclear tasks | Runs in new terminal (can ask questions) |
+
+[Back to Top](#table-of-contents)
 
 ---
 
@@ -768,6 +787,8 @@ npm test
 git push origin develop
 ```
 
+[Back to Top](#table-of-contents)
+
 ---
 
 ## Rebase vs Merge Strategy
@@ -814,6 +835,8 @@ A - B - C - D - X' - Y'     [feature/K-123_user_auth]
 - Easy to revert entire sub-task: `git revert -m 1 <merge-commit>`
 - Visual history shows parallel work streams
 - Matches operator/sub-agent mental model
+
+[Back to Top](#table-of-contents)
 
 ---
 
@@ -913,6 +936,8 @@ Sub-agent skill activates automatically when Claude is spawned in a task worktre
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+[Back to Top](#table-of-contents)
+
 ---
 
 ## Forked Terminals vs Sub-Agents
@@ -960,6 +985,8 @@ Operator (main conversation)
 ```
 
 **Key insight:** Sub-agents handle the conversational loop (plan-review-iterate). Forked terminals handle heavy CLI work that sub-agents trigger but don't need to watch.
+
+[Back to Top](#table-of-contents)
 
 ---
 
@@ -1305,6 +1332,8 @@ task-add-payment-routes/ feature/PAYMENT-42/add-payment-routes  (3 commits ahead
 - Coverage: 82% (was 78%)
 ```
 
+[Back to Top](#table-of-contents)
+
 ---
 
 ## Helper Scripts
@@ -1490,6 +1519,8 @@ for TASK_DIR in "${WORKSPACE}"/task-*/; do
 done
 ```
 
+[Back to Top](#table-of-contents)
+
 ---
 
 ## Common Issues and Solutions
@@ -1552,6 +1583,8 @@ git log feature/K-123_main..HEAD  # see commits
 git diff feature/K-123_main..HEAD  # see changes
 ```
 
+[Back to Top](#table-of-contents)
+
 ---
 
 ## Quick Reference
@@ -1612,6 +1645,8 @@ done
 ./task-status.sh ./myworkspace feature/K-123_feature_name
 ```
 
+[Back to Top](#table-of-contents)
+
 ---
 
 ## Troubleshooting
@@ -1643,3 +1678,5 @@ python3 tools/locking.py status
 # Detect conflicts
 python3 tools/conflict_resolver.py detect <worktree_path>
 ```
+
+[Back to Top](#table-of-contents)
