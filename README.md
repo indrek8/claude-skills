@@ -89,25 +89,29 @@ TMP_DIR=$(mktemp -d) \
 After installation, you should have:
 
 ```
-.claude/skills/
-├── worktree-common/
-│   └── templates/           # Shared templates
-│       ├── plan.md
-│       ├── spec.md
-│       ├── feedback.md
-│       ├── results.md
-│       └── review-notes.md
+.claude/
+├── commands/
+│   └── prime_worktree_operator.md   # Slash command to prime Claude
 │
-├── worktree-operator/
-│   ├── SKILL.md            # Operator skill definition
-│   ├── cookbook/           # 9 workflow cookbooks
-│   ├── prompts/            # Context handoff templates
-│   └── tools/              # Python utilities
-│
-└── worktree-subagent/
-    ├── SKILL.md            # Sub-agent skill definition
-    ├── cookbook/           # 4 mode cookbooks
-    └── prompts/            # Spec reading/results writing
+└── skills/
+    ├── worktree-common/
+    │   └── templates/           # Shared templates
+    │       ├── plan.md
+    │       ├── spec.md
+    │       ├── feedback.md
+    │       ├── results.md
+    │       └── review-notes.md
+    │
+    ├── worktree-operator/
+    │   ├── SKILL.md            # Operator skill definition
+    │   ├── cookbook/           # 9 workflow cookbooks
+    │   ├── prompts/            # Context handoff templates
+    │   └── tools/              # Python utilities
+    │
+    └── worktree-subagent/
+        ├── SKILL.md            # Sub-agent skill definition
+        ├── cookbook/           # 4 mode cookbooks
+        └── prompts/            # Spec reading/results writing
 ```
 
 ### Verifying Installation
@@ -119,6 +123,23 @@ What skills do you have for worktree management?
 ```
 
 Claude should recognize the operator and sub-agent skills.
+
+### Using the Slash Command
+
+The quickest way to prime Claude with the full worktree operator system is to use the included slash command:
+
+```
+/prime_worktree_operator
+```
+
+This command loads all skills, templates, cookbooks, and prompts into context, giving Claude complete knowledge of the multi-agent workflow system. Use this at the start of any session where you want to use the operator/sub-agent workflow.
+
+**What the command loads:**
+- Operator and sub-agent skill definitions
+- All workflow templates (plan.md, spec.md, feedback.md, results.md, review-notes.md)
+- Operator cookbooks (init, plan, create task, spawn, review, accept, iterate, reset, sync, resolve conflicts, batch operations)
+- Sub-agent cookbooks (implement, test, refactor, review modes)
+- Context handoff and review prompts
 
 ---
 
@@ -798,51 +819,7 @@ A - B - C - D - X' - Y'     [feature/K-123_user_auth]
 
 ## Claude Code Skills Architecture
 
-Skills are modular capabilities that extend Claude Code. They live in `.claude/skills/` directories.
-
-### Skill Structure
-
-```
-.claude/skills/
-│
-├── worktree-operator/
-│   ├── SKILL.md                    # Skill definition & triggers
-│   ├── cookbook/
-│   │   ├── init-workspace.md       # Clone repo, setup workspace
-│   │   ├── create-plan.md          # Analyze and generate plan.md
-│   │   ├── create-task.md          # Create task folder + worktree
-│   │   ├── spawn-subagent.md       # Launch sub-agent in worktree
-│   │   ├── review-task.md          # Review sub-agent output
-│   │   ├── accept-task.md          # Rebase + merge + cleanup
-│   │   ├── reject-iterate.md       # Write feedback, re-spawn
-│   │   ├── reject-reset.md         # Reset worktree, re-spawn
-│   │   └── sync-worktrees.md       # Rebase all active worktrees
-│   ├── prompts/
-│   │   ├── plan_template.md        # Template for plan.md
-│   │   ├── spec_template.md        # Template for spec.md
-│   │   └── context_handoff.md      # Context passed to sub-agents
-│   └── tools/
-│       ├── workspace.py            # Workspace management functions
-│       ├── task.py                 # Task/worktree operations
-│       └── git_ops.py              # Git operations (rebase, merge)
-│
-├── worktree-subagent/
-│   ├── SKILL.md                    # Sub-agent skill definition
-│   ├── cookbook/
-│   │   ├── implement.md            # Code implementation mode
-│   │   ├── test.md                 # Test writing/fixing mode
-│   │   ├── review.md               # Code review mode
-│   │   └── refactor.md             # Refactoring mode
-│   └── prompts/
-│       ├── spec_reader.md          # How to read and understand spec
-│       └── results_template.md     # Template for results.md
-│
-└── worktree-common/
-    └── templates/
-        ├── spec.md                 # Task spec template
-        ├── feedback.md             # Feedback template
-        └── results.md              # Results template
-```
+Skills are modular capabilities that extend Claude Code. See [Skill Installation](#skill-installation) for the directory structure.
 
 ### Operator Skill Triggers
 
