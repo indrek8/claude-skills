@@ -1623,7 +1623,7 @@ For comprehensive troubleshooting guidance, including:
 - **Recovery Procedures** - How to recover from conflicts, failed accepts, stuck locks, etc.
 - **Debugging Tips** - Commands and techniques for diagnosing issues
 
-See the dedicated **[Troubleshooting Guide](TROUBLESHOOTING.md)**.
+See the dedicated **[Troubleshooting Guide](skills/worktree-operator/reference/troubleshooting.md)**.
 
 ### Quick Diagnostic Commands
 
